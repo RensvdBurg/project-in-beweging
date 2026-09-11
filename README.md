@@ -3,12 +3,16 @@
 Jongeren die leren voor een zittend beroep, zoals programmeren, lopen risico op gezondheidsproblemen door langdurig zitten. De app die wij gaan maken stimuleert gezonde gewoontes door leerdoelen te combineren met korte beweegpauzes.
 
 # Icons
-Wil je een icon gebruiken doe dan (iconoir-*naam-icon te vinden op: https://iconoir.com/*)
+
+Wil je een icon gebruiken doe dan (iconoir-_naam-icon te vinden op: https://iconoir.com/_)
 
 # install
+
 npm i iconoir
 npm install
 altijd wanneer je gaat coderen npm run dev
+
+# github push
 
 voordat je begint doe je:
 
@@ -23,9 +27,19 @@ git push -u origin feature/NaamVanFeature
 daarna kan je op github een pull request aanmaken
 dan kan iemand de code revieuwen testen en mergen
 
+# github error
+
 als je dit krijgt tijdens het pushen: remote: Invalid username or token. Password authentication is not supported for Git operations. fatal: Authentication failed for '
 RensvdBurg/project-in-beweging.git'
 
 doe dan
 git credential-manager github login --force
 en log in via de browser
+
+# github test
+
+git switch test
+git pull origin test
+git switch -c fix/NaamVanFix
+
+voor de rest is het hetzelfe als een normale push

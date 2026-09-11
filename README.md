@@ -2,8 +2,11 @@
 
 Jongeren die leren voor een zittend beroep, zoals programmeren, lopen risico op gezondheidsproblemen door langdurig zitten. De app die wij gaan maken stimuleert gezonde gewoontes door leerdoelen te combineren met korte beweegpauzes.
 
-#install
+# Icons
+Wil je een icon gebruiken doe dan (iconoir-*naam-icon te vinden op: https://iconoir.com/*)
 
+# install
+npm i iconoir
 npm install
 altijd wanneer je gaat coderen npm run dev
 

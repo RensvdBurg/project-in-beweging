@@ -19,3 +19,10 @@ git push -u origin feature/NaamVanFeature
 
 daarna kan je op github een pull request aanmaken
 dan kan iemand de code revieuwen testen en mergen
+
+als je dit krijgt tijdens het pushen: remote: Invalid username or token. Password authentication is not supported for Git operations. fatal: Authentication failed for '
+RensvdBurg/project-in-beweging.git'
+
+doe dan
+git credential-manager github login --force
+en log in via de browser

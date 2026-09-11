@@ -14,7 +14,7 @@ git pull origin develop
 git switch -c feature/NaamVanFeature
 
 dan als je klaar bent doe je git add .
-git commiut -m "korte naam die uitlegt wat je gedaan hebt"
+git commit -m "korte naam die uitlegt wat je gedaan hebt"
 git push -u origin feature/NaamVanFeature
 
 daarna kan je op github een pull request aanmaken

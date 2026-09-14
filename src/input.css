@@ -2,3 +2,9 @@
 
 @source "../*.php";
 @source "../pages";
+:root {
+    --orange: #FF6B4A;
+    --green: #2EC4B6;
+    --secondary-green: #2EC4B6;
+    --background: #F9FAFC;
+}

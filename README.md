@@ -49,3 +49,4 @@ voor de rest is het hetzelfe als een normale push
 als je merged maak je ook een pull request aan. Nadat iemand dan je pr heeft gecontroleerd kan hij worden gemerged. we werken op develop. En testen op test. het gaat dus
 Develop -> test -> release -> main
 als je van develop iets naar test merged moet je er ook voor zorgen dat het op develop komt zodat die up to date blijft.
+dit doe je door voor je merged te zorgen dat je base op develop staat en als je dan iets wilt testen merge je develop weer naar test.

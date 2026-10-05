@@ -1,3 +1,4 @@
+<?php require __DIR__ . '/pages/auth.php'; ?>
 <!doctype html>
 <html lang="nl">
 <head>

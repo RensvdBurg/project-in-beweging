@@ -27,7 +27,7 @@ $currentYear = (int) date('Y');
     </div>
 
     <div class="relative z-10 w-full max-w-[402px] sm:max-w-[440px]">
-        <div id="logo" class="mb-[133px] ml-[calc(50%-147px)] flex items-center gap-[6px] sm:ml-[22px]">
+        <div id="logo" class="<?= $activeAuthMode === 'register' ? 'mb-[24px]' : 'mb-[133px]' ?> ml-[calc(50%-147px)] flex items-center gap-[6px] sm:ml-[22px]">
             <span class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[10px] bg-card shadow-[0_5px_19px_oklch(0.25_0_0/0.18)]" aria-hidden="true">
                 <svg class="h-5 w-5 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
@@ -36,24 +36,40 @@ $currentYear = (int) date('Y');
             <span class="text-[20px] font-bold text-foreground">UpMove</span>
         </div>
 
-        <section id="login" class="mx-auto w-full max-w-[322px] rounded-[24px] bg-card px-[32px] pb-[49px] pt-[42px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]" aria-labelledby="loginTitle">
-            <h1 id="loginTitle" class="mb-[16px] text-[20px] font-semibold text-card-foreground">Aanmelden</h1>
-            <form id="loginForm" method="post" class="flex flex-col gap-[21px]">
-                <div class="flex flex-col gap-[22px]">
-                    <label class="sr-only" for="loginEmail">Gebruikersnaam of e-mailadres</label>
-                    <input id="loginEmail" required name="email" autocomplete="username" placeholder="Gebruikersnaam/email" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
-                    <label class="sr-only" for="loginPassword">Wachtwoord</label>
-                    <input id="loginPassword" required type="password" name="password" autocomplete="current-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
-                </div>
-                <p id="loginStatus" role="status" aria-live="polite" class="hidden text-center text-xs text-card-foreground">De inlogfunctie is nog niet gekoppeld aan accounts.</p>
-                <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Aanmelden</button>
-            </form>
-            <p class="mt-[14px] text-center text-[10px] font-medium text-placeholder">Heb je nog geen account? <button type="button" data-mode="register" class="cursor-pointer font-semibold text-teal hover:underline">Registreren</button></p>
+        <section id="login" class="mx-auto w-full max-w-[322px] rounded-[24px] bg-card px-[32px] pb-[49px] pt-[42px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]<?= $activeAuthMode === 'register' ? ' hidden' : '' ?>" aria-labelledby="loginTitle">
+            <?php if ($currentUser !== null): ?>
+                <h1 id="loginTitle" class="mb-[16px] text-[20px] font-semibold text-card-foreground">Je bent ingelogd</h1>
+                <p class="mb-[20px] text-center text-sm text-card-foreground">Welkom, <?= htmlspecialchars($currentUser['full_name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars($currentUser['username'], ENT_QUOTES, 'UTF-8') ?>).</p>
+                <form method="post">
+                    <input type="hidden" name="action" value="logout">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                    <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Uitloggen</button>
+                </form>
+            <?php else: ?>
+                <h1 id="loginTitle" class="mb-[16px] text-[20px] font-semibold text-card-foreground">Aanmelden</h1>
+                <form id="loginForm" method="post" class="flex flex-col gap-[21px]">
+                    <input type="hidden" name="action" value="login">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="flex flex-col gap-[22px]">
+                        <label class="sr-only" for="loginEmail">Gebruikersnaam of e-mailadres</label>
+                        <input id="loginEmail" required name="email" autocomplete="username" placeholder="Gebruikersnaam/e-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                        <label class="sr-only" for="loginPassword">Wachtwoord</label>
+                        <input id="loginPassword" required type="password" name="password" autocomplete="current-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    </div>
+                    <?php if ($authMessage !== '' && $activeAuthMode === 'login'): ?>
+                        <p id="loginStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-teal' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                    <?php endif; ?>
+                    <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Aanmelden</button>
+                </form>
+                <p class="mt-[14px] text-center text-[10px] font-medium text-placeholder">Heb je nog geen account? <button type="button" data-mode="register" class="cursor-pointer font-semibold text-teal hover:underline">Registreren</button></p>
+            <?php endif; ?>
         </section>
 
-        <section id="register" class="relative left-[3px] mx-auto hidden w-full max-w-[322px] rounded-[24px] bg-card pb-[23px] pl-[26px] pr-[32px] pt-[20px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]" aria-labelledby="registerTitle">
+        <section id="register" class="relative left-[3px] mx-auto w-full max-w-[322px] rounded-[24px] bg-card pb-[23px] pl-[26px] pr-[32px] pt-[20px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]<?= $activeAuthMode === 'register' && $currentUser === null ? '' : ' hidden' ?>" aria-labelledby="registerTitle">
             <h1 id="registerTitle" class="mb-[11px] text-[20px] font-semibold text-card-foreground">Registreren</h1>
             <form id="registerForm" method="post" class="flex flex-col gap-[21px]">
+                <input type="hidden" name="action" value="register">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                 <div class="flex flex-col gap-[15px]">
                     <div>
                         <label class="sr-only" for="registerEmail">E-mailadres</label>
@@ -95,8 +111,9 @@ $currentYear = (int) date('Y');
                     <label class="sr-only" for="username">Gebruikersnaam</label>
                     <input id="username" required name="username" autocomplete="username" placeholder="Gebruikersnaam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                 </div>
-                <p id="registerError" role="alert" class="hidden text-center text-xs text-flag-red"></p>
-                <p id="registerStatus" role="status" aria-live="polite" class="hidden text-center text-xs text-card-foreground">De registratie is nog niet gekoppeld aan accounts.</p>
+                <?php if ($authMessage !== '' && $activeAuthMode === 'register'): ?>
+                    <p id="registerStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-teal' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                <?php endif; ?>
                 <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Registreren</button>
             </form>
             <p class="mt-[14px] text-center text-[10px] font-medium text-placeholder">Heb je al een account? <button type="button" data-mode="login" class="cursor-pointer font-semibold text-teal hover:underline">Aanmelden</button></p>

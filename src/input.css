@@ -2,13 +2,26 @@
 
 @source "../*.php";
 @source "../pages";
-:root {
-    --orange: #FF6B4A;
-    --green: #2EC4B6;
-    --secondary-green: #2EC4B6;
-    --background: #F9FAFC;
-    --informatie-text: #D8D8D8;
-    --grijze-vakken: #9CA3AF;
-    --grijze-overlay: 6C727F;
-    --text-koppen: #000000; 
+
+@theme {
+  /* Lettertype van de hele app */
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+
+  /* ---------- Kleuren (gebruik in HTML als bg-orange, text-muted, enz.) ---------- */
+  --color-app-bg: #f4f5f7; /* pagina-achtergrond */
+  --color-surface: #ffffff; /* witte kaarten */
+  --color-ink: #1a1a1a; /* hoofdtekst / zwarte knoppen */
+  --color-muted: #8a8f98; /* grijze subtiteltekst */
+  --color-orange: #ff6b4a; /* primaire oranje (ring, play, actieve nav) */
+  --color-orange-soft: #ffe8e1; /* lichte oranje (boost-kaart) */
+  --color-orange-streak: #ffe4d6; /* achtergrond streak-badge */
+  --color-orange-streak-text: #e86a3a; /* tekst streak-badge */
+  --color-teal: #5ecfc0; /* rand timerkaart */
+  --color-teal-soft: #e8faf7; /* icoon-achtergrond timer */
+  --color-alert-bg: #fff6df; /* achtergrond waarschuwing */
+  --color-alert-border: #f0d9a0; /* rand waarschuwing */
+  --color-alert-icon: #f5d76e; /* icoon-achtergrond waarschuwing */
+
+  /* Schaduw onder kaarten */
+  --shadow-card: 0 8px 28px rgba(20, 24, 40, 0.06);
 }

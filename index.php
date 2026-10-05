@@ -2,7 +2,6 @@
 
 <body>
     <?php require __DIR__ . '/components/header.php'; ?>
-    <h1 class="text-[var(--green)]">
-        Hallo wereld!
-    </h1>
+    <?php require __DIR__ . '/pages/home.php'; ?>
+    <?php require __DIR__ . '/components/footer.php'; ?>
 </body>

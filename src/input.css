@@ -3,14 +3,32 @@
 @source "../*.php";
 @source "../pages";
 
+@theme {
+    --font-sans: "Montserrat", Arial, sans-serif;
+    --color-background: oklch(0.986 0.004 260);
+    --color-foreground: oklch(0.22 0.008 250);
+    --color-card: oklch(1 0 0);
+    --color-card-foreground: oklch(0.48 0.01 250);
+    --color-primary: oklch(0.705 0.183 33);
+    --color-primary-foreground: oklch(1 0 0);
+    --color-ring: oklch(0.73 0.14 33);
+    --color-placeholder: oklch(0.78 0.005 250);
+    --color-teal: oklch(0.7 0.13 181);
+    --color-flag-red: oklch(0.54 0.2 27);
+}
+
 :root {
-    --color-oranje: #ff6b4a;
-    --color-groen: #2ec4b6;
-    --color-wit-grijs: #f9fafc;
-    --color-grijs: #d8d8d8;
-    --color-grijs2: #9ca3af;
-    --color-grijs-overlay: #6c727f;
-    --color-zwart: #000000;
+  --color-oranje: #ff6b4a;
+  --color-groen: #2ec4b6;
+  --color-wit-grijs: #f9fafc;
+  --color-grijs: #d8d8d8;
+  --color-grijs2: #9ca3af;
+  --color-grijs-overlay: #6c727f;
+  --color-zwart: #000000;
+}
+
+* {
+    box-sizing: border-box;
 }
 
 html,
@@ -20,27 +38,7 @@ body {
 }
 
 body {
-    background: var(--color-wit-grijs);
-}
-
-input::placeholder {
-    color: #d8d8dc;
-    opacity: 1;
-}
-
-.phone-shell {
-    width: min(100vw, 402px);
-    min-height: 100vh;
-    overflow: hidden;
-    position: relative;
-    background: var(--color-wit-grijs);
-}
-
-@media (min-width: 640px) {
-    .phone-shell {
-        min-height: 874px;
-        height: 874px;
-        margin: 24px auto;
-        box-shadow: 0 8px 35px rgba(0, 0, 0, 0.12);
-    }
+    font-family: 'Montserrat', sans-serif;
+    background: #F9FAFC;
+    color: #000000;
 }

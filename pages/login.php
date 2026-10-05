@@ -1,178 +1,105 @@
-<main class="min-h-screen flex items-center justify-center">
+<?php
+$months = [
+    1 => 'Januari',
+    2 => 'Februari',
+    3 => 'Maart',
+    4 => 'April',
+    5 => 'Mei',
+    6 => 'Juni',
+    7 => 'Juli',
+    8 => 'Augustus',
+    9 => 'September',
+    10 => 'Oktober',
+    11 => 'November',
+    12 => 'December',
+];
+$currentYear = (int) date('Y');
+?>
 
-    <div class="phone-shell">
-
-        <!-- Achtergrond -->
-        <svg class="absolute inset-0 w-full h-full" viewBox="0 0 402 874" fill="none" xmlns="http://www.w3.org/2000/svg"
-            preserveAspectRatio="none" aria-hidden="true">
-            <rect width="402" height="874" fill="#F9FAFC" />
-            <rect width="402" height="27" fill="#FF6B4A" />
-            <path d="
-                    M0 0H402V30
-                    C367 29 345 47 323 88
-                    C296 139 272 187 242 205
-                    C211 224 174 213 145 213
-                    C94 213 46 198 0 174V0Z
-                " fill="#FF6B4A" />
-            <path d="
-                    M0 174
-                    C46 198 94 213 145 213
-                    C174 213 211 224 242 205
-                    C272 187 296 139 323 88
-                    C345 47 367 29 402 30
-                " stroke="#D9DDE2" stroke-width="2" opacity=".8" />
-            <path d="
-                    M0 604
-                    C28 628 58 645 96 649
-                    C145 655 177 638 198 606
-                    C222 569 242 522 265 486
-                    C289 447 312 429 342 427
-                    C365 425 385 419 402 405
-                    V874H0V604Z
-                " fill="#FF6B4A" />
-            <path d="
-                    M0 604
-                    C28 628 58 645 96 649
-                    C145 655 177 638 198 606
-                    C222 569 242 522 265 486
-                    C289 447 312 429 342 427
-                    C365 425 385 419 402 405
-                " stroke="#D9DDE2" stroke-width="2" opacity=".8" />
+<main class="relative flex min-h-dvh flex-col items-center overflow-hidden bg-background px-4 pb-12 pt-[71px] sm:justify-center sm:py-12">
+    <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <svg class="absolute left-0 top-0 h-[260px] w-full fill-primary drop-shadow-[0_5px_8px_oklch(0.25_0_0/0.18)] min-[700px]:h-[34%]" viewBox="0 0 402 260" preserveAspectRatio="none">
+            <path d="M0 0H402C376 0 343 7 309 72C287 111 275 134 252 177C223 219 199 232 146 233C77 232 0 175 0 175Z" />
         </svg>
-
-        <!-- Logo -->
-        <div class="absolute top-[64px] left-[53px] z-20 flex items-center gap-1.5">
-
-            <div
-                class="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-white shadow-[0_6px_18px_rgba(0,0,0,.13)]">
-
-                <svg width="26" height="26" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path
-                        d="M8.88826 17.5392C9.02181 17.6231 9.1764 17.6673 9.33408 17.6668H15.1668C15.3015 17.6663 15.4344 17.6986 15.554 17.7608C15.6736 17.823 15.7763 17.9133 15.8533 18.0239C15.9303 18.1346 15.9793 18.2622 15.9962 18.396C16.013 18.5297 15.9972 18.6656 15.95 18.7918L14.3502 23.8088C14.3251 23.8999 14.3318 23.9969 14.3691 24.0837C14.4064 24.1706 14.4721 24.2422 14.5554 24.2867C14.6387 24.3313 14.7347 24.3462 14.8276 24.3291C14.9206 24.3119 15.0049 24.2636 15.0668 24.1922L23.3158 15.6917C23.4152 15.5692 23.4777 15.421 23.4962 15.2644C23.5147 15.1078 23.4884 14.9491 23.4204 14.8069C23.3523 14.6646 23.2453 14.5446 23.1117 14.4608C22.9782 14.3769 22.8236 14.3327 22.6659 14.3332H16.8332C16.6985 14.3337 16.5656 14.3014 16.446 14.2392C16.3264 14.177 16.2237 14.0867 16.1467 13.9761C16.0697 13.8654 16.0207 13.7378 16.0038 13.604C15.987 13.4703 16.0028 13.3344 16.05 13.2082L17.6498 8.1912C17.6749 8.10007 17.6682 8.00312 17.6309 7.91628C17.5936 7.82943 17.5279 7.75784 17.4446 7.71326C17.3613 7.66868 17.2653 7.65376 17.1724 7.67095C17.0794 7.68814 16.9951 7.73641 16.9332 7.80785L8.68416 16.3084C8.58482 16.4308 8.52226 16.579 8.50376 16.7356C8.48526 16.8922 8.51156 17.0509 8.57963 17.1931C8.64769 17.3354 8.75471 17.4554 8.88826 17.5392Z"
-                        stroke="#2EC4B6" stroke-width="2" stroke-linecap="round" />
-                </svg>
-
-            </div>
-
-            <span class=" text-[17px] font-extrabold tracking-[-.4px] text-[#1A1C1E]">
-                UpMove
-            </span>
-
-        </div>
-
-        <!-- Login -->
-        <section class="
-            absolute
-            left-[42px]
-            right-[42px]
-            top-[212px]
-            z-10
-            rounded-[20px]
-            bg-white
-            px-[26px]
-            pt-[34px]
-            pb-[38px]
-            shadow-[0_8px_24px_rgba(26,28,30,.16)]">
-
-            <h1 class="
-                mb-[13px]
-                text-[17px]
-                font-semibold
-                tracking-[-.2px]
-                text-[#77787C]
-            ">
-                Aanmelden
-            </h1>
-
-            <form class="space-y-[26px]" action="#" method="POST">
-
-                <!-- Gebruikersnaam -->
-                <div>
-                    <label for="username" class="sr-only">
-                        Gebruikersnaam/email
-                    </label>
-
-                    <input id="username" name="username" type="text" autocomplete="username"
-                        placeholder="Gebruikersnaam/email" class="
-                            h-[48px]
-                            w-full
-                            rounded-[16px]
-                            border
-                            border-[#F0F0F1]
-                            bg-white
-                            px-[16px]
-                            text-[12px]
-                            text-[#1A1C1E]
-                            outline-none
-                            shadow-[0_6px_18px_rgba(26,28,30,.12)]
-                            transition
-                            focus:border-[#FF6B4A]
-                            focus:ring-2
-                            focus:ring-[#FF6B4A]/15
-                        ">
-                </div>
-
-                <!-- Wachtwoord -->
-                <div>
-                    <label for="password" class="sr-only">
-                        Wachtwoord
-                    </label>
-
-                    <input id="password" name="password" type="password" autocomplete="current-password"
-                        placeholder="Wachtwoord" class="
-                            h-[48px]
-                            w-full
-                            rounded-[16px]
-                            border
-                            border-[#F0F0F1]
-                            bg-white
-                            px-[16px]
-                            text-[12px]
-                            text-[#1A1C1E]
-                            outline-none
-                            shadow-[0_6px_18px_rgba(26,28,30,.12)]
-                            transition
-                            focus:border-[#FF6B4A]
-                            focus:ring-2
-                            focus:ring-[#FF6B4A]/15
-                        ">
-                </div>
-
-                <!-- Button -->
-                <button type="submit" class="
-                        h-[32px]
-                        w-full
-                        rounded-full
-                        bg-[#FF6B4A]
-                        text-[11px]
-                        font-semibold
-                        text-white
-                        shadow-[0_5px_12px_rgba(255,107,74,.28)]
-                        transition
-                        hover:brightness-95
-                        active:scale-[.99]
-                    ">
-                    Aanmelden
-                </button>
-
-            </form>
-
-            <p class="
-                mt-[11px]
-                whitespace-nowrap
-                text-center
-                text-[9px]
-                text-[#DEDEE2]
-            ">
-                Nog geen account?
-
-                <a href="#" class="font-semibold text-[#8B6FE8] hover:underline">
-                    Account aanmaken
-                </a>
-            </p>
-
-        </section>
-
+        <svg class="absolute bottom-0 left-0 h-[min(42.2%,370px)] w-full fill-primary drop-shadow-[0_-4px_8px_oklch(0.25_0_0/0.13)] min-[700px]:h-[47%]" viewBox="0 0 402 370" preserveAspectRatio="none">
+            <path d="M0 222C10 232 64 279 134 279C220 279 236 243 258 212C278 175 314 107 314 107L346 56C370 25 382 15 402 0V370H0Z" />
+        </svg>
     </div>
 
+    <div class="relative z-10 w-full max-w-[402px] sm:max-w-[440px]">
+        <div id="logo" class="mb-[133px] ml-[calc(50%-147px)] flex items-center gap-[6px] sm:ml-[22px]">
+            <span class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[10px] bg-card shadow-[0_5px_19px_oklch(0.25_0_0/0.18)]" aria-hidden="true">
+                <svg class="h-5 w-5 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+            </span>
+            <span class="text-[20px] font-bold text-foreground">UpMove</span>
+        </div>
+
+        <section id="login" class="mx-auto w-full max-w-[322px] rounded-[24px] bg-card px-[32px] pb-[49px] pt-[42px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]" aria-labelledby="loginTitle">
+            <h1 id="loginTitle" class="mb-[16px] text-[20px] font-semibold text-card-foreground">Aanmelden</h1>
+            <form id="loginForm" method="post" class="flex flex-col gap-[21px]">
+                <div class="flex flex-col gap-[22px]">
+                    <label class="sr-only" for="loginEmail">Gebruikersnaam of e-mailadres</label>
+                    <input id="loginEmail" required name="email" autocomplete="username" placeholder="Gebruikersnaam/email" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <label class="sr-only" for="loginPassword">Wachtwoord</label>
+                    <input id="loginPassword" required type="password" name="password" autocomplete="current-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                </div>
+                <p id="loginStatus" role="status" aria-live="polite" class="hidden text-center text-xs text-card-foreground">De inlogfunctie is nog niet gekoppeld aan accounts.</p>
+                <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Aanmelden</button>
+            </form>
+            <p class="mt-[14px] text-center text-[10px] font-medium text-placeholder">Heb je nog geen account? <button type="button" data-mode="register" class="cursor-pointer font-semibold text-teal hover:underline">Registreren</button></p>
+        </section>
+
+        <section id="register" class="relative left-[3px] mx-auto hidden w-full max-w-[322px] rounded-[24px] bg-card pb-[23px] pl-[26px] pr-[32px] pt-[20px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]" aria-labelledby="registerTitle">
+            <h1 id="registerTitle" class="mb-[11px] text-[20px] font-semibold text-card-foreground">Registreren</h1>
+            <form id="registerForm" method="post" class="flex flex-col gap-[21px]">
+                <div class="flex flex-col gap-[15px]">
+                    <div>
+                        <label class="sr-only" for="registerEmail">E-mailadres</label>
+                        <input id="registerEmail" required type="email" name="email" autocomplete="email" placeholder="E-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                        <p class="mt-1 pl-[14px] text-[10px] font-medium text-card-foreground">Je ontvangt mogelijk meldingen van ons.</p>
+                    </div>
+                    <label class="sr-only" for="registerPassword">Wachtwoord</label>
+                    <input id="registerPassword" required type="password" name="password" autocomplete="new-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <label class="sr-only" for="confirmPassword">Wachtwoord herhalen</label>
+                    <input id="confirmPassword" required type="password" name="confirmPassword" autocomplete="new-password" placeholder="Wachtwoord herhalen" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <fieldset>
+                        <legend class="mb-[12px] pl-[8px] text-[16px] font-semibold text-card-foreground">Geboortedatum</legend>
+                        <div class="flex gap-[12px]">
+                            <label class="sr-only" for="birthDay">Dag</label>
+                            <select id="birthDay" required name="day" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
+                                <option value="" disabled selected>Dag</option>
+                                <?php for ($day = 1; $day <= 31; $day++): ?>
+                                    <option value="<?= $day ?>"><?= $day ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <label class="sr-only" for="birthMonth">Maand</label>
+                            <select id="birthMonth" required name="month" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
+                                <option value="" disabled selected>Maand</option>
+                                <?php foreach ($months as $monthNumber => $monthName): ?>
+                                    <option value="<?= $monthNumber ?>"><?= htmlspecialchars($monthName, ENT_QUOTES, 'UTF-8') ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <label class="sr-only" for="birthYear">Jaar</label>
+                            <select id="birthYear" required name="year" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
+                                <option value="" disabled selected>Jaar</option>
+                                <?php for ($year = $currentYear; $year >= $currentYear - 110; $year--): ?>
+                                    <option value="<?= $year ?>"><?= $year ?></option>
+                                <?php endfor; ?>
+                            </select>
+                        </div>
+                    </fieldset>
+                    <label class="sr-only" for="fullName">Volledige naam</label>
+                    <input id="fullName" required name="fullName" autocomplete="name" placeholder="Volledige naam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <label class="sr-only" for="username">Gebruikersnaam</label>
+                    <input id="username" required name="username" autocomplete="username" placeholder="Gebruikersnaam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                </div>
+                <p id="registerError" role="alert" class="hidden text-center text-xs text-flag-red"></p>
+                <p id="registerStatus" role="status" aria-live="polite" class="hidden text-center text-xs text-card-foreground">De registratie is nog niet gekoppeld aan accounts.</p>
+                <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Registreren</button>
+            </form>
+            <p class="mt-[14px] text-center text-[10px] font-medium text-placeholder">Heb je al een account? <button type="button" data-mode="login" class="cursor-pointer font-semibold text-teal hover:underline">Aanmelden</button></p>
+        </section>
+    </div>
 </main>

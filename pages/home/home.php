@@ -1,3 +1,21 @@
+<?php
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+if (
+    realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__ ||
+    empty($_SESSION['user'])
+) {
+    header('Location: ../../index.php', true, 303);
+    exit;
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$homeCsrfToken = $_SESSION['csrf_token'];
+?>
   <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
     <!-- ========== SCHERM: HOME ========== -->
@@ -8,9 +26,8 @@
         <div class="min-w-0">
           <!-- Subtitel boven de naam -->
           <p class="mb-0.5 text-sm font-medium text-muted">Welkom terug</p>
-          <!-- Naam van de gebruiker — pas "Larsu" hier aan -->
           <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
-            Hé, Larsu!
+            Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?>!
           </h1>
         </div>
 
@@ -26,6 +43,12 @@
           <span id="streak-text">5 Dagen Reeks</span>
         </button>
       </header>
+
+      <form method="post" class="mb-4 flex justify-end">
+        <input type="hidden" name="action" value="logout">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+        <button type="submit" class="rounded-full px-3 py-2 text-xs font-semibold text-muted hover:bg-surface">Uitloggen</button>
+      </form>
 
       <!-- WAARSCHUWING: te lang gezeten — klik start een stretch -->
       <button

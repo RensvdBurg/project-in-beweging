@@ -1,15 +1,20 @@
 <?php
 
-$host = "localhost";
-$dbname = "bewegingsapp";
-$username = "root";
-$password = "";
+function getDatabaseConnection(): PDO
+{
+    $host = getenv('DB_HOST') ?: 'localhost';
+    $dbname = getenv('DB_NAME') ?: 'bewegingsapp';
+    $username = getenv('DB_USER') ?: 'root';
+    $password = getenv('DB_PASSWORD') ?: '';
 
-try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
-
-    echo "Verbonden met MySQL!";
-} catch (PDOException $e) {
-    echo "Verbinding mislukt: " . $e->getMessage();
+    return new PDO(
+        "mysql:host={$host};dbname={$dbname};charset=utf8mb4",
+        $username,
+        $password,
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]
+    );
 }
-?>

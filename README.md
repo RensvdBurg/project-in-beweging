@@ -12,6 +12,14 @@ npm i iconoir
 npm install
 altijd wanneer je gaat coderen npm run dev
 
+# Database instellen
+
+Start MySQL via XAMPP en importeer `database/schema.sql` via phpMyAdmin. Dit maakt de database `bewegingsapp` en de tabel `users` aan.
+
+De standaardverbinding gebruikt `localhost`, database `bewegingsapp`, gebruiker `root` en een leeg wachtwoord. Stel voor een andere omgeving de variabelen `DB_HOST`, `DB_NAME`, `DB_USER` en `DB_PASSWORD` in.
+
+Registratie bewaart het e-mailadres, de gebruikersnaam, volledige naam en geboortedatum. Het wachtwoord wordt als hash opgeslagen; het herhaalde wachtwoord wordt alleen gebruikt om de invoer te controleren.
+
 # github push
 
 voordat je begint doe je:

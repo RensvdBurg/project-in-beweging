@@ -112,7 +112,7 @@ try {
         <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
           Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?> 👋
         </h1>
-        <p class="text-sm font-bold text-orange"><?= (int) ($_SESSION['user']['xp'] ?? 0) ?> XP</p>
+        <p class="text-sm font-bold text-orange">Totaal: <?= (int) ($_SESSION['user']['xp'] ?? 0) ?> XP</p>
       </div>
       <form method="post" class="mb-4 flex justify-end">
         <input type="hidden" name="action" value="logout">

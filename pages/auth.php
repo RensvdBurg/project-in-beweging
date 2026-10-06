@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $mode = $_POST['action'] ?? '';
-if (!in_array($mode, ['login', 'register', 'logout', 'next_challenge'], true)) {
+if (!in_array($mode, ['login', 'register', 'logout', 'next_challenge', 'complete_challenge'], true)) {
     http_response_code(400);
     exit('Ongeldige aanvraag.');
 }
@@ -39,8 +39,9 @@ $redirectWithMessage = static function (string $message, string $type = 'error')
 
 $submittedToken = $_POST['csrf_token'] ?? '';
 if (!is_string($submittedToken) || !hash_equals($csrfToken, $submittedToken)) {
-    if ($mode === 'next_challenge') {
-        $_SESSION['challenge_notice'] = 'Je sessie is verlopen. Ververs de pagina en probeer het opnieuw.';
+    if (in_array($mode, ['next_challenge', 'complete_challenge'], true)) {
+        $noticeKey = $mode === 'complete_challenge' ? 'challenge_completion_notice' : 'challenge_notice';
+        $_SESSION[$noticeKey] = 'Je sessie is verlopen. Ververs de pagina en probeer het opnieuw.';
         header('Location: index.php', true, 303);
         exit;
     }
@@ -126,6 +127,99 @@ try {
         exit;
     }
 
+    if ($mode === 'complete_challenge') {
+        if ($currentUser === null) {
+            $_SESSION['challenge_completion_notice'] = 'Log in om een opdracht te voltooien.';
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $homeChallenge = $_SESSION['home_challenge'] ?? null;
+        $challengeIntervalSeconds = 90 * 60;
+        $currentChallengeInterval = intdiv(time(), $challengeIntervalSeconds);
+        if (
+            !is_array($homeChallenge) ||
+            (int) ($homeChallenge['interval'] ?? -1) !== $currentChallengeInterval ||
+            (int) ($homeChallenge['id'] ?? 0) < 1
+        ) {
+            $_SESSION['challenge_completion_notice'] = 'Deze opdracht is niet meer actief. Ververs de pagina en probeer het opnieuw.';
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $challengeId = (int) $homeChallenge['id'];
+        $userId = (int) $currentUser['id'];
+        try {
+            $db->beginTransaction();
+            $challengeStatement = $db->prepare(
+                'SELECT xp_reward FROM challenges WHERE id = :id LIMIT 1'
+            );
+            $challengeStatement->execute(['id' => $challengeId]);
+            $xpReward = $challengeStatement->fetchColumn();
+
+            if ($xpReward === false || (int) $xpReward < 1) {
+                $db->rollBack();
+                $_SESSION['challenge_completion_notice'] = 'Deze opdracht is niet beschikbaar voor voltooiing.';
+                header('Location: index.php', true, 303);
+                exit;
+            }
+
+            $completionStatement = $db->prepare(
+                'INSERT INTO challenge_completions (user_id, challenge_id, challenge_interval)
+                 VALUES (:user_id, :challenge_id, :challenge_interval)'
+            );
+            try {
+                $completionStatement->execute([
+                    'user_id' => $userId,
+                    'challenge_id' => $challengeId,
+                    'challenge_interval' => $currentChallengeInterval,
+                ]);
+            } catch (PDOException $exception) {
+                if ((int) ($exception->errorInfo[1] ?? 0) !== 1062) {
+                    throw $exception;
+                }
+
+                $db->rollBack();
+                $_SESSION['challenge_completion_notice'] = 'Je hebt deze opdracht al voltooid.';
+                header('Location: index.php', true, 303);
+                exit;
+            }
+
+            $updateStatement = $db->prepare(
+                'UPDATE users SET xp = COALESCE(xp, 0) + :xp_reward WHERE id = :user_id'
+            );
+            $updateStatement->execute([
+                'xp_reward' => (int) $xpReward,
+                'user_id' => $userId,
+            ]);
+
+            if ($updateStatement->rowCount() !== 1) {
+                $db->rollBack();
+                error_log('XP-toekenning mislukt: gebruiker niet gevonden (id ' . $userId . ').');
+                $_SESSION['challenge_completion_notice'] = 'De XP kon niet worden toegekend. Probeer het later opnieuw.';
+                header('Location: index.php', true, 303);
+                exit;
+            }
+
+            $xpStatement = $db->prepare('SELECT xp FROM users WHERE id = :user_id');
+            $xpStatement->execute(['user_id' => $userId]);
+            $totalXp = $xpStatement->fetchColumn();
+            $db->commit();
+
+            $_SESSION['user']['xp'] = (int) $totalXp;
+            $_SESSION['challenge_completion_notice'] = "Opdracht voltooid! Je hebt {$xpReward} XP verdiend.";
+        } catch (PDOException $exception) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log('Opdracht voltooien/databasefout: ' . $exception->getMessage());
+            $_SESSION['challenge_completion_notice'] = 'De opdracht kon niet worden voltooid. Probeer het later opnieuw.';
+        }
+
+        header('Location: index.php', true, 303);
+        exit;
+    }
+
     if ($mode === 'register') {
         $email = trim($postString('email'));
         $username = trim($postString('username'));
@@ -179,6 +273,7 @@ try {
             'id' => (int) $db->lastInsertId(),
             'username' => $username,
             'full_name' => $fullName,
+            'xp' => 0,
         ];
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         $mode = 'login';
@@ -188,7 +283,7 @@ try {
     $identifier = trim($postString('email'));
     $password = $postString('password');
     $statement = $db->prepare(
-        'SELECT id, username, full_name, password_hash
+        'SELECT id, username, full_name, password_hash, xp
          FROM users
          WHERE email = :email OR username = :username
          LIMIT 1'
@@ -208,6 +303,7 @@ try {
         'id' => (int) $user['id'],
         'username' => $user['username'],
         'full_name' => $user['full_name'],
+        'xp' => (int) $user['xp'],
     ];
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     $redirectWithMessage('Je bent ingelogd als ' . $user['username'] . '.', 'success');

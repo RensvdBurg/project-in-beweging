@@ -25,7 +25,8 @@ $challengeChangesUsed = is_array($challengeUsage) && ($challengeUsage['date'] ??
   : 0;
 $challengeChangesRemaining = $dailyChallengeChangeLimit - $challengeChangesUsed;
 $challengeNotice = $_SESSION['challenge_notice'] ?? '';
-unset($_SESSION['challenge_notice']);
+$challengeCompletionNotice = $_SESSION['challenge_completion_notice'] ?? '';
+unset($_SESSION['challenge_notice'], $_SESSION['challenge_completion_notice']);
 
 require_once __DIR__ . '/../../database/database.php';
 
@@ -35,6 +36,13 @@ $challengeChangeAt = ($challengeInterval + 1) * $challengeIntervalSeconds;
 
 try {
   $db = getDatabaseConnection();
+  $userXpStatement = $db->prepare('SELECT xp FROM users WHERE id = :user_id');
+  $userXpStatement->execute(['user_id' => (int) $_SESSION['user']['id']]);
+  $currentUserXp = $userXpStatement->fetchColumn();
+  if ($currentUserXp !== false) {
+    $_SESSION['user']['xp'] = (int) $currentUserXp;
+  }
+
   $challengeStatement = $db->query(
     'SELECT id, title, description, img, kcal_burned, difficulty, xp_reward
          FROM challenges
@@ -69,6 +77,22 @@ try {
       ];
     }
   }
+
+  $challengeCompleted = false;
+  if ($selectedChallenge !== null) {
+    $completionStatement = $db->prepare(
+      'SELECT 1 FROM challenge_completions
+       WHERE user_id = :user_id AND challenge_id = :challenge_id
+         AND challenge_interval = :challenge_interval'
+    );
+    $completionStatement->execute([
+      'user_id' => (int) $_SESSION['user']['id'],
+      'challenge_id' => (int) $selectedChallenge['id'],
+      'challenge_interval' => $challengeInterval,
+    ]);
+    $challengeCompleted = $completionStatement->fetchColumn() !== false;
+  }
+
   $challengeLoadError = false;
 } catch (PDOException $exception) {
   error_log('Challenges/databasefout: ' . $exception->getMessage());
@@ -88,6 +112,7 @@ try {
         <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
           Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?> 👋
         </h1>
+        <p class="text-sm font-bold text-orange"><?= (int) ($_SESSION['user']['xp'] ?? 0) ?> XP</p>
       </div>
       <form method="post" class="mb-4 flex justify-end">
         <input type="hidden" name="action" value="logout">
@@ -168,6 +193,24 @@ try {
       <?php endif; ?>
 
       <div class="my-4 h-px bg-[#e6e8ec]" aria-hidden="true"></div>
+
+      <?php if ($selectedChallenge !== null && !$challengeLoadError): ?>
+        <form method="post" class="space-y-3">
+          <input type="hidden" name="action" value="complete_challenge">
+          <input type="hidden" name="csrf_token"
+            value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+          <button type="submit"
+            class="w-full rounded-xl bg-teal px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            <?= $challengeCompleted ? 'disabled' : '' ?>>
+            Voltooid
+          </button>
+          <?php if ($challengeCompletionNotice !== ''): ?>
+            <p class="rounded-xl bg-white/70 px-3 py-2 text-sm font-semibold text-ink" role="status">
+              <?= htmlspecialchars($challengeCompletionNotice, ENT_QUOTES, 'UTF-8') ?>
+            </p>
+          <?php endif; ?>
+        </form>
+      <?php endif; ?>
 
     </section>
 

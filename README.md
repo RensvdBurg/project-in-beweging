@@ -4,7 +4,7 @@ Jongeren die leren voor een zittend beroep, zoals programmeren, lopen risico op 
 
 # Icons
 
-Wil je een icon gebruiken doe dan (iconoir-_naam-icon te vinden op: https://iconoir.com/_)
+Wil je een icon gebruiken doe dan (iconoir-_naam-icon te vinden op: https://iconoir.com/)
 
 # install
 

@@ -4,14 +4,30 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
 }
 
+
+/*
+ * home.php hoort via de hoofdapp geladen te worden.
+ * Niet ingelogd = terug naar index.
+ */
 if (
-  realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__ ||
+  realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__
+  ||
   empty($_SESSION['user'])
 ) {
-  header('Location: ../../index.php', true, 303);
+
+  header(
+    'Location: ../../index.php',
+    true,
+    303
+  );
+
   exit;
 }
 
+
+/*
+ * CSRF token voor bijvoorbeeld uitloggen.
+ */
 if (empty($_SESSION['csrf_token'])) {
   $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }

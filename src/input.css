@@ -24,17 +24,17 @@
 
   /* Schaduw onder kaarten */
   --shadow-card: 0 8px 28px rgba(20, 24, 40, 0.06);
-    --font-sans: "Montserrat", Arial, sans-serif;
-    --color-background: oklch(0.986 0.004 260);
-    --color-foreground: oklch(0.22 0.008 250);
-    --color-card: oklch(1 0 0);
-    --color-card-foreground: oklch(0.48 0.01 250);
-    --color-primary: oklch(0.705 0.183 33);
-    --color-primary-foreground: oklch(1 0 0);
-    --color-ring: oklch(0.73 0.14 33);
-    --color-placeholder: oklch(0.78 0.005 250);
-    --color-teal: oklch(0.7 0.13 181);
-    --color-flag-red: oklch(0.54 0.2 27);
+  --font-sans: "Montserrat", Arial, sans-serif;
+  --color-background: oklch(0.986 0.004 260);
+  --color-foreground: oklch(0.22 0.008 250);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.48 0.01 250);
+  --color-primary: oklch(0.705 0.183 33);
+  --color-primary-foreground: oklch(1 0 0);
+  --color-ring: oklch(0.73 0.14 33);
+  --color-placeholder: oklch(0.78 0.005 250);
+  --color-teal: oklch(0.7 0.13 181);
+  --color-flag-red: oklch(0.54 0.2 27);
 }
 
 :root {
@@ -48,17 +48,86 @@
 }
 
 * {
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
 html,
 body {
-    margin: 0;
-    min-height: 100%;
+  margin: 0;
+  min-height: 100%;
 }
 
 body {
-    font-family: 'Montserrat', sans-serif;
-    background: #F9FAFC;
-    color: #000000;
+  font-family: "Montserrat", sans-serif;
+  background: #f9fafc;
+  color: #000000;
+}
+
+/* ==========================================
+   UPMOVE DARK MODE
+   ========================================== */
+
+html.upmove-dark {
+  color-scheme: dark;
+
+  --color-background: #151920;
+  --color-app-bg: #151920;
+
+  --color-surface: #202630;
+  --color-card: #202630;
+
+  --color-foreground: #f4f5f7;
+  --color-card-foreground: #dce1e8;
+
+  --color-muted: #a3acba;
+
+  --color-orange-soft: #382823;
+  --color-orange-streak: #382823;
+
+  --color-teal-soft: #203a37;
+
+  --color-alert-bg: #302b20;
+  --color-alert-border: #71603b;
+}
+
+html.upmove-dark body {
+  background-color: #151920;
+  color: #f4f5f7;
+}
+
+/* Footer */
+
+html.upmove-dark .upmove-footer {
+  background-color: rgb(32 38 48 / 95%);
+  border-color: #343b46;
+}
+
+/* Settings cards */
+
+html.upmove-dark .settings-card {
+  background-color: #202630;
+}
+
+html.upmove-dark .settings-divider {
+  background-color: #343b46;
+}
+
+html.upmove-dark .settings-description,
+html.upmove-dark .settings-section-title {
+  color: #a3acba;
+}
+
+html.upmove-dark .settings-small-button {
+  background-color: #2a313c;
+  color: #f4f5f7;
+}
+
+html.upmove-dark .settings-time-input {
+  background-color: #2a313c;
+  border-color: #3a424f;
+  color: #f4f5f7;
+}
+
+html.upmove-dark .premium-card {
+  background-color: #382823;
 }

@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $mode = $_POST['action'] ?? '';
-if (!in_array($mode, ['login', 'register', 'logout'], true)) {
+if (!in_array($mode, ['login', 'register', 'logout', 'next_challenge', 'complete_challenge'], true)) {
     http_response_code(400);
     exit('Ongeldige aanvraag.');
 }
@@ -39,6 +39,13 @@ $redirectWithMessage = static function (string $message, string $type = 'error')
 
 $submittedToken = $_POST['csrf_token'] ?? '';
 if (!is_string($submittedToken) || !hash_equals($csrfToken, $submittedToken)) {
+    if (in_array($mode, ['next_challenge', 'complete_challenge'], true)) {
+        $noticeKey = $mode === 'complete_challenge' ? 'challenge_completion_notice' : 'challenge_notice';
+        $_SESSION[$noticeKey] = 'Je sessie is verlopen. Ververs de pagina en probeer het opnieuw.';
+        header('Location: index.php', true, 303);
+        exit;
+    }
+
     $redirectWithMessage('Je sessie is verlopen. Probeer het opnieuw.');
 }
 
@@ -59,6 +66,159 @@ $postString = static function (string $key): string {
 
 try {
     $db = getDatabaseConnection();
+
+    if ($mode === 'next_challenge') {
+        $dailyChallengeChangeLimit = 2;
+        if ($currentUser === null) {
+            $_SESSION['challenge_notice'] = 'Log in om een andere opdracht te kiezen.';
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $usageKey = 'manual_challenge_changes_' . (int) $currentUser['id'];
+        $today = date('Y-m-d');
+        $usage = $_SESSION[$usageKey] ?? [];
+        if (!is_array($usage) || ($usage['date'] ?? null) !== $today) {
+            $usage = ['date' => $today, 'count' => 0];
+        }
+
+        if ((int) $usage['count'] >= $dailyChallengeChangeLimit) {
+            $_SESSION['challenge_notice'] = "Je hebt je {$dailyChallengeChangeLimit} directe opdrachtwissels voor vandaag al gebruikt.";
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $statement = $db->query('SELECT id FROM challenges ORDER BY id');
+        $challengeIds = array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
+        if ($challengeIds === []) {
+            $_SESSION['challenge_notice'] = 'Er zijn momenteel geen opdrachten beschikbaar.';
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $previousChallengeId = (int) ($_SESSION['home_challenge']['id'] ?? 0);
+        if (count($challengeIds) === 1 && $challengeIds[0] === $previousChallengeId) {
+            $_SESSION['challenge_notice'] = 'Er is maar één opdracht beschikbaar, dus er is geen andere opdracht om te laden.';
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $challengeOptions = $challengeIds;
+        if (count($challengeOptions) > 1 && $previousChallengeId !== 0) {
+            $challengeOptions = array_values(array_filter(
+                $challengeOptions,
+                static fn(int $challengeId): bool => $challengeId !== $previousChallengeId
+            ));
+        }
+
+        $selectedChallengeId = $challengeOptions[random_int(0, count($challengeOptions) - 1)];
+        $challengeIntervalSeconds = 90 * 60;
+        $_SESSION['home_challenge'] = [
+            'interval' => intdiv(time(), $challengeIntervalSeconds),
+            'id' => $selectedChallengeId,
+        ];
+        $usage['count'] = (int) $usage['count'] + 1;
+        $_SESSION[$usageKey] = $usage;
+        $remainingChanges = $dailyChallengeChangeLimit - $usage['count'];
+        $_SESSION['challenge_notice'] = $remainingChanges === 0
+            ? 'Nieuwe opdracht geladen. Je hebt vandaag geen directe opdrachtwissels meer.'
+            : "Nieuwe opdracht geladen. Je kunt dit vandaag nog {$remainingChanges} keer doen.";
+        header('Location: index.php', true, 303);
+        exit;
+    }
+
+    if ($mode === 'complete_challenge') {
+        if ($currentUser === null) {
+            $_SESSION['challenge_completion_notice'] = 'Log in om een opdracht te voltooien.';
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $homeChallenge = $_SESSION['home_challenge'] ?? null;
+        $challengeIntervalSeconds = 90 * 60;
+        $currentChallengeInterval = intdiv(time(), $challengeIntervalSeconds);
+        if (
+            !is_array($homeChallenge) ||
+            (int) ($homeChallenge['interval'] ?? -1) !== $currentChallengeInterval ||
+            (int) ($homeChallenge['id'] ?? 0) < 1
+        ) {
+            $_SESSION['challenge_completion_notice'] = 'Deze opdracht is niet meer actief. Ververs de pagina en probeer het opnieuw.';
+            header('Location: index.php', true, 303);
+            exit;
+        }
+
+        $challengeId = (int) $homeChallenge['id'];
+        $userId = (int) $currentUser['id'];
+        try {
+            $db->beginTransaction();
+            $challengeStatement = $db->prepare(
+                'SELECT xp_reward FROM challenges WHERE id = :id LIMIT 1'
+            );
+            $challengeStatement->execute(['id' => $challengeId]);
+            $xpReward = $challengeStatement->fetchColumn();
+
+            if ($xpReward === false || (int) $xpReward < 1) {
+                $db->rollBack();
+                $_SESSION['challenge_completion_notice'] = 'Deze opdracht is niet beschikbaar voor voltooiing.';
+                header('Location: index.php', true, 303);
+                exit;
+            }
+
+            $completionStatement = $db->prepare(
+                'INSERT INTO challenge_completions (user_id, challenge_id, challenge_interval)
+                 VALUES (:user_id, :challenge_id, :challenge_interval)'
+            );
+            try {
+                $completionStatement->execute([
+                    'user_id' => $userId,
+                    'challenge_id' => $challengeId,
+                    'challenge_interval' => $currentChallengeInterval,
+                ]);
+            } catch (PDOException $exception) {
+                if ((int) ($exception->errorInfo[1] ?? 0) !== 1062) {
+                    throw $exception;
+                }
+
+                $db->rollBack();
+                $_SESSION['challenge_completion_notice'] = 'Je hebt deze opdracht al voltooid.';
+                header('Location: index.php', true, 303);
+                exit;
+            }
+
+            $updateStatement = $db->prepare(
+                'UPDATE users SET xp = COALESCE(xp, 0) + :xp_reward WHERE id = :user_id'
+            );
+            $updateStatement->execute([
+                'xp_reward' => (int) $xpReward,
+                'user_id' => $userId,
+            ]);
+
+            if ($updateStatement->rowCount() !== 1) {
+                $db->rollBack();
+                error_log('XP-toekenning mislukt: gebruiker niet gevonden (id ' . $userId . ').');
+                $_SESSION['challenge_completion_notice'] = 'De XP kon niet worden toegekend. Probeer het later opnieuw.';
+                header('Location: index.php', true, 303);
+                exit;
+            }
+
+            $xpStatement = $db->prepare('SELECT xp FROM users WHERE id = :user_id');
+            $xpStatement->execute(['user_id' => $userId]);
+            $totalXp = $xpStatement->fetchColumn();
+            $db->commit();
+
+            $_SESSION['user']['xp'] = (int) $totalXp;
+            $_SESSION['challenge_completion_notice'] = "Opdracht voltooid! Je hebt {$xpReward} XP verdiend.";
+        } catch (PDOException $exception) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log('Opdracht voltooien/databasefout: ' . $exception->getMessage());
+            $_SESSION['challenge_completion_notice'] = 'De opdracht kon niet worden voltooid. Probeer het later opnieuw.';
+        }
+
+        header('Location: index.php', true, 303);
+        exit;
+    }
 
     if ($mode === 'register') {
         $email = trim($postString('email'));
@@ -113,6 +273,7 @@ try {
             'id' => (int) $db->lastInsertId(),
             'username' => $username,
             'full_name' => $fullName,
+            'xp' => 0,
         ];
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         $mode = 'login';
@@ -122,7 +283,7 @@ try {
     $identifier = trim($postString('email'));
     $password = $postString('password');
     $statement = $db->prepare(
-        'SELECT id, username, full_name, password_hash
+        'SELECT id, username, full_name, password_hash, xp
          FROM users
          WHERE email = :email OR username = :username
          LIMIT 1'
@@ -142,10 +303,18 @@ try {
         'id' => (int) $user['id'],
         'username' => $user['username'],
         'full_name' => $user['full_name'],
+        'xp' => (int) $user['xp'],
     ];
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     $redirectWithMessage('Je bent ingelogd als ' . $user['username'] . '.', 'success');
 } catch (PDOException $exception) {
+    if ($mode === 'next_challenge') {
+        error_log('Opdrachtwissel/databasefout: ' . $exception->getMessage());
+        $_SESSION['challenge_notice'] = 'De opdracht kon niet worden gewijzigd. Probeer het later opnieuw.';
+        header('Location: index.php', true, 303);
+        exit;
+    }
+
     if ($mode === 'register' && (int) ($exception->errorInfo[1] ?? 0) === 1062) {
         $redirectWithMessage('Dit e-mailadres of deze gebruikersnaam is al in gebruik.');
     }

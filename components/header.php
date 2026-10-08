@@ -1,3 +1,13 @@
+<?php
+
+$cssFile = __DIR__ . '/../css/output.css';
+
+$cssVersion = file_exists($cssFile)
+    ? filemtime($cssFile)
+    : time();
+
+?>
+
 <meta charset="UTF-8">
 
 <meta
@@ -31,11 +41,12 @@
 
 <!-- ========================================= -->
 <!-- TAILWIND -->
+<!-- Cache wordt automatisch vernieuwd -->
 <!-- ========================================= -->
 
 <link
     rel="stylesheet"
-    href="/project-in-beweging/css/output.css">
+    href="/project-in-beweging/css/output.css?v=<?= $cssVersion ?>">
 
 
 <!-- ========================================= -->

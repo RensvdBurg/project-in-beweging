@@ -251,6 +251,22 @@ $userId =
                     Instellingen
                 </h1>
 
+
+                <button type="button"
+                    class="settings-card absolute right-0 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm transition active:scale-95"
+                    aria-label="Meldingen">
+
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+
+                        <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor"
+                            stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+
+                        <path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+
+                    </svg>
+
+                </button>
+
             </header>
 
 
@@ -301,6 +317,56 @@ $userId =
 
                         <input id="setting-frequency" type="range" min="15" max="120" step="15" value="45"
                             class="upmove-range block" aria-label="Herinneringsfrequentie">
+
+                    </div>
+
+
+
+                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
+
+
+
+                    <!-- DAGDOEL -->
+
+                    <div class="flex items-center gap-3 p-4">
+
+
+                        <div class="min-w-0 flex-1">
+
+                            <p class="text-[13px] font-bold">
+                                Dagelijks sta-doel
+                            </p>
+
+                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
+                                Hoe vaak wil je per dag opstaan?
+                            </p>
+
+                        </div>
+
+
+                        <div class="flex shrink-0 items-center gap-2">
+
+
+                            <button type="button" id="settings-goal-minus"
+                                class="settings-button grid h-8 w-8 place-items-center rounded-lg bg-[#f4f6f8] text-base font-bold transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="Dagdoel verlagen">
+                                −
+                            </button>
+
+
+                            <span id="settings-goal-value" class="min-w-6 text-center text-[14px] font-extrabold">
+                                12
+                            </span>
+
+
+                            <button type="button" id="settings-goal-plus"
+                                class="settings-button grid h-8 w-8 place-items-center rounded-lg bg-[#f4f6f8] text-base font-bold transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="Dagdoel verhogen">
+                                +
+                            </button>
+
+
+                        </div>
 
                     </div>
 

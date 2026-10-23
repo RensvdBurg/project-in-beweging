@@ -49,6 +49,7 @@ require_once __DIR__ . '/../../database/database.php';
 $challengeIntervalSeconds = 90 * 60;
 $challengeInterval = intdiv(time(), $challengeIntervalSeconds);
 $challengeChangeAt = ($challengeInterval + 1) * $challengeIntervalSeconds;
+$noDifferentChallengeAvailable = false;
 
 try {
   $db = getDatabaseConnection();
@@ -80,17 +81,21 @@ try {
     if ($selectedChallenge === null) {
       $previousChallengeId = is_array($savedChallenge) ? (int) ($savedChallenge['id'] ?? 0) : 0;
       $challengeOptions = $challenges;
-      if (count($challengeOptions) > 1 && $previousChallengeId !== 0) {
+      if ($previousChallengeId !== 0) {
         $challengeOptions = array_values(array_filter(
           $challengeOptions,
           static fn(array $challenge): bool => (int) $challenge['id'] !== $previousChallengeId
         ));
       }
-      $selectedChallenge = $challengeOptions[random_int(0, count($challengeOptions) - 1)];
-      $_SESSION['home_challenge'] = [
-        'interval' => $challengeInterval,
-        'id' => (int) $selectedChallenge['id'],
-      ];
+      if ($challengeOptions === []) {
+        $noDifferentChallengeAvailable = true;
+      } else {
+        $selectedChallenge = $challengeOptions[random_int(0, count($challengeOptions) - 1)];
+        $_SESSION['home_challenge'] = [
+          'interval' => $challengeInterval,
+          'id' => (int) $selectedChallenge['id'],
+        ];
+      }
     }
   }
 
@@ -178,7 +183,11 @@ try {
               De opdracht kon niet worden geladen. Probeer het later opnieuw.
             </p>
           <?php elseif ($selectedChallenge === null): ?>
-            <p class="text-sm text-muted">Er is nog geen opdracht beschikbaar.</p>
+            <p class="text-sm text-muted">
+              <?= $noDifferentChallengeAvailable
+                ? 'Er is geen andere opdracht beschikbaar.'
+                : 'Er is nog geen opdracht beschikbaar.' ?>
+            </p>
           <?php else: ?>
             <img src="<?= htmlspecialchars($selectedChallenge['img'], ENT_QUOTES, 'UTF-8') ?>"
               alt="<?= htmlspecialchars($selectedChallenge['title'], ENT_QUOTES, 'UTF-8') ?>"

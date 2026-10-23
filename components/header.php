@@ -19,7 +19,7 @@ $cssVersion = file_exists($cssFile)
     content="#f7f8fa"
     id="theme-color">
 
-<title>In beweging</title>
+<title><?= htmlspecialchars($pageTitle ?? 'In beweging', ENT_QUOTES, 'UTF-8') ?></title>
 
 
 <!-- ========================================= -->

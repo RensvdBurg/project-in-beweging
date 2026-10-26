@@ -4,7 +4,7 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF'] ?? '');
 
 $isSettingsPage = str_contains(
   $currentPath,
-  '/pages/settings/settings.php'
+  '/pages/settings/'
 );
 
 $allowedScreens = [

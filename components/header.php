@@ -19,9 +19,6 @@ $cssVersion = file_exists($cssFile)
     content="#f7f8fa"
     id="theme-color">
 
-<title>In beweging</title>
-
-
 <!-- ========================================= -->
 <!-- GLOBALE INSTELLINGEN -->
 <!-- Dark mode + werk/school instellingen -->

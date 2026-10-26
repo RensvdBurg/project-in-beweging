@@ -41,23 +41,6 @@
             'settings-frequency-label'
         );
 
-    const goalValue =
-        document.getElementById(
-            'settings-goal-value'
-        );
-
-    const goalMinus =
-        document.getElementById(
-            'settings-goal-minus'
-        );
-
-    const goalPlus =
-        document.getElementById(
-            'settings-goal-plus'
-        );
-
-
-
     /*
      * WERK / SCHOOL
      */
@@ -108,10 +91,6 @@
             'setting-quiet-hours'
         ),
 
-        sound: document.getElementById(
-            'setting-sound'
-        ),
-
         darkMode: document.getElementById(
             'setting-dark'
         )
@@ -136,13 +115,9 @@
 
         frequency: 45,
 
-        dailyGoal: 12,
-
         reminders: true,
 
         quietHours: true,
-
-        sound: false,
 
         darkMode: false,
 
@@ -206,30 +181,11 @@
 
 
             /*
-             * DAGDOEL
-             */
-            if (
-                Number.isInteger(
-                    saved.dailyGoal
-                ) &&
-                saved.dailyGoal >= 1 &&
-                saved.dailyGoal <= 30
-            ) {
-
-                settings.dailyGoal =
-                    saved.dailyGoal;
-
-            }
-
-
-
-            /*
              * SWITCHES
              */
             [
                 'reminders',
                 'quietHours',
-                'sound',
                 'darkMode',
                 'workOnly'
             ].forEach((name) => {
@@ -470,26 +426,6 @@
             '--range-progress',
             `${rangeProgress}%`
         );
-
-
-
-        /*
-         * DAGDOEL
-         */
-
-        goalValue.textContent =
-            settings.dailyGoal;
-
-
-        goalMinus.disabled =
-            settings.dailyGoal <= 1;
-
-
-        goalPlus.disabled =
-            settings.dailyGoal >= 30;
-
-
-
         /*
          * ALGEMENE SWITCHES
          */
@@ -743,51 +679,6 @@
 
         }
     );
-
-
-
-    /*
-     * DAGDOEL -
-     */
-
-    goalMinus.addEventListener(
-        'click',
-        () => {
-
-            settings.dailyGoal =
-                Math.max(
-                    1,
-                    settings.dailyGoal - 1
-                );
-
-            save();
-
-        }
-    );
-
-
-
-    /*
-     * DAGDOEL +
-     */
-
-    goalPlus.addEventListener(
-        'click',
-        () => {
-
-            settings.dailyGoal =
-                Math.min(
-                    30,
-                    settings.dailyGoal + 1
-                );
-
-            save();
-
-        }
-    );
-
-
-
     /*
      * NORMALE SWITCHES
      */

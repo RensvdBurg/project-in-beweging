@@ -29,7 +29,6 @@
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
     --font-weight-extrabold: 800;
-    --tracking-tighter: -0.05em;
     --tracking-tight: -0.025em;
     --tracking-wide: 0.025em;
     --leading-snug: 1.375;
@@ -41,13 +40,11 @@
     --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
-    --color-app-bg: #f4f5f7;
     --color-surface: #ffffff;
     --color-ink: #1a1a1a;
     --color-muted: #8a8f98;
     --color-orange: #ff6b4a;
     --color-orange-soft: #ffe8e1;
-    --color-orange-streak: #ffe4d6;
     --color-teal: oklch(0.7 0.13 181);
     --color-teal-soft: #e8faf7;
     --color-alert-bg: #fff6df;
@@ -257,12 +254,6 @@
   .left-0 {
     left: 0px;
   }
-  .left-1 {
-    left: var(--spacing);
-  }
-  .left-1\/2 {
-    left: calc(1 / 2 * 100%);
-  }
   .left-\[3px\] {
     left: 3px;
   }
@@ -281,17 +272,14 @@
   .my-4 {
     margin-block: calc(var(--spacing) * 4);
   }
-  .mt-0 {
-    margin-top: 0px;
-  }
   .mt-0\.5 {
     margin-top: calc(var(--spacing) * 0.5);
   }
   .mt-1 {
     margin-top: var(--spacing);
   }
-  .mt-3 {
-    margin-top: calc(var(--spacing) * 3);
+  .mt-2 {
+    margin-top: calc(var(--spacing) * 2);
   }
   .mt-3 {
     margin-top: calc(var(--spacing) * 3);
@@ -304,9 +292,6 @@
   }
   .mt-\[14px\] {
     margin-top: 14px;
-  }
-  .mb-0 {
-    margin-bottom: 0px;
   }
   .mb-0\.5 {
     margin-bottom: calc(var(--spacing) * 0.5);
@@ -353,9 +338,6 @@
   .mb-\[133px\] {
     margin-bottom: 133px;
   }
-  .ml-0 {
-    margin-left: 0px;
-  }
   .ml-0\.5 {
     margin-left: calc(var(--spacing) * 0.5);
   }
@@ -379,8 +361,6 @@
   }
   .inline-flex {
     display: inline-flex;
-  .table {
-    display: table;
   }
   .table {
     display: table;
@@ -517,17 +497,6 @@
   .border-collapse {
     border-collapse: collapse;
   }
-  .-translate-x-1 {
-    --tw-translate-x: calc(var(--spacing) * -1);
-    translate: var(--tw-translate-x) var(--tw-translate-y);
-  }
-  .-translate-x-1\/2 {
-    --tw-translate-x: calc(calc(1 / 2 * 100%) * -1);
-    translate: var(--tw-translate-x) var(--tw-translate-y);
-  }
-  .transform {
-    transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);
-  }
   .cursor-pointer {
     cursor: pointer;
   }
@@ -572,9 +541,6 @@
   }
   .justify-end {
     justify-content: flex-end;
-  }
-  .gap-0 {
-    gap: 0px;
   }
   .gap-0\.5 {
     gap: calc(var(--spacing) * 0.5);
@@ -635,9 +601,6 @@
   }
   .rounded-\[14px\] {
     border-radius: 14px;
-  }
-  .rounded-\[17px\] {
-    border-radius: 17px;
   }
   .rounded-\[18px\] {
     border-radius: 18px;
@@ -715,9 +678,6 @@
   .bg-\[\#ff6b4a\] {
     background-color: #ff6b4a;
   }
-  .bg-\[\#fff0ec\] {
-    background-color: #fff0ec;
-  }
   .bg-alert-bg {
     background-color: var(--color-alert-bg);
   }
@@ -790,14 +750,8 @@
   .p-5 {
     padding: calc(var(--spacing) * 5);
   }
-  .px-0 {
-    padding-inline: 0px;
-  }
   .px-0\.5 {
     padding-inline: calc(var(--spacing) * 0.5);
-  }
-  .px-1 {
-    padding-inline: var(--spacing);
   }
   .px-1\.5 {
     padding-inline: calc(var(--spacing) * 1.5);
@@ -1069,10 +1023,6 @@
     --tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
-  .outline {
-    outline-style: var(--tw-outline-style);
-    outline-width: 1px;
-  }
   .drop-shadow-\[0_-4px_8px_oklch\(0\.25_0_0\/0\.13\)\] {
     --tw-drop-shadow-size: drop-shadow(0 -4px 8px var(--tw-drop-shadow-color, oklch(0.25 0 0/0.13)));
     --tw-drop-shadow: var(--tw-drop-shadow-size);
@@ -1150,9 +1100,6 @@
     .hover\:bg-\[\#e02e06\]:hover {
       background-color: #e02e06;
     }
-    .hover\:bg-\[\#e02e06\]:hover {
-      background-color: #e02e06;
-    }
     .hover\:bg-\[\#f4f6f8\]:hover {
       background-color: #f4f6f8;
     }
@@ -1172,11 +1119,6 @@
     }
     .hover\:bg-red-700:hover {
       background-color: var(--color-red-700);
-    }
-    .hover\:bg-surface:hover {
-      background-color: var(--color-surface);
-    .hover\:bg-teal-soft:hover {
-      background-color: var(--color-teal-soft);
     }
     .hover\:bg-teal-soft:hover {
       background-color: var(--color-teal-soft);
@@ -1241,9 +1183,6 @@
     --tw-scale-z: 95%;
     scale: var(--tw-scale-x) var(--tw-scale-y);
   }
-  .active\:scale-\[0\.98\]:active {
-    scale: 0.98;
-  }
   .active\:scale-\[0\.99\]:active {
     scale: 0.99;
   }
@@ -1258,12 +1197,6 @@
   }
   .disabled\:opacity-40:disabled {
     opacity: 40%;
-  }
-  .disabled\:opacity-50:disabled {
-    opacity: 50%;
-  }
-  .disabled\:opacity-60:disabled {
-    opacity: 60%;
   }
   .disabled\:opacity-50:disabled {
     opacity: 50%;
@@ -1476,7 +1409,6 @@ html.upmove-dark .account-input {
 html.upmove-dark .account-avatar {
   background-color: #382823;
 }
-@property --tw-space-y-reverse {
 html.upmove-dark .account-surface .settings-divider, html.upmove-dark .account-surface .border-t {
   border-color: #343b46;
 }
@@ -1488,41 +1420,6 @@ html.upmove-dark .account-dialog .account-dialog-cancel:hover {
 }
 html.upmove-dark .upmove-settings a.settings-card:hover {
   background-color: #2a313c;
-}
-@property --tw-translate-x {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
-@property --tw-translate-y {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
-@property --tw-translate-z {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
-@property --tw-rotate-x {
-  syntax: "*";
-  inherits: false;
-}
-@property --tw-rotate-y {
-  syntax: "*";
-  inherits: false;
-}
-@property --tw-rotate-z {
-  syntax: "*";
-  inherits: false;
-}
-@property --tw-skew-x {
-  syntax: "*";
-  inherits: false;
-}
-@property --tw-skew-y {
-  syntax: "*";
-  inherits: false;
 }
 @property --tw-space-y-reverse {
   syntax: "*";
@@ -1610,11 +1507,6 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
   syntax: "*";
   inherits: false;
   initial-value: 0 0 #0000;
-}
-@property --tw-outline-style {
-  syntax: "*";
-  inherits: false;
-  initial-value: solid;
 }
 @property --tw-blur {
   syntax: "*";
@@ -1743,14 +1635,6 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
-      --tw-translate-x: 0;
-      --tw-translate-y: 0;
-      --tw-translate-z: 0;
-      --tw-rotate-x: initial;
-      --tw-rotate-y: initial;
-      --tw-rotate-z: initial;
-      --tw-skew-x: initial;
-      --tw-skew-y: initial;
       --tw-space-y-reverse: 0;
       --tw-border-style: solid;
       --tw-leading: initial;
@@ -1770,7 +1654,6 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
       --tw-ring-offset-width: 0px;
       --tw-ring-offset-color: #fff;
       --tw-ring-offset-shadow: 0 0 #0000;
-      --tw-outline-style: solid;
       --tw-blur: initial;
       --tw-brightness: initial;
       --tw-contrast: initial;

@@ -182,8 +182,8 @@ $userId = $_SESSION['user']['id']
                             </p>
 
                             <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Herinneringen alleen binnen
-                                jouw ingestelde tijden
+                                Herinneringen en meldingen bij nieuwe opdrachten alleen binnen jouw ingestelde tijden.
+                                UpMove moet open zijn.
                             </p>
 
                         </div>
@@ -377,6 +377,11 @@ $userId = $_SESSION['user']['id']
                             Ma t/m Vr · 08:30 - 17:00
                         </div>
 
+                        <p id="work-notification-status"
+                            class="mt-2 text-[11px] leading-relaxed text-[#858c97]"
+                            role="status"
+                            aria-live="polite"></p>
+
 
                     </div>
 
@@ -401,47 +406,6 @@ $userId = $_SESSION['user']['id']
 
                 <div
                     class="settings-card overflow-hidden rounded-[18px] bg-white shadow-[0_4px_14px_rgba(20,28,38,0.05)]">
-
-
-                    <!-- STILLE UREN -->
-
-                    <label class="flex cursor-pointer items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Stille uren
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Geen meldingen tussen
-                                21:00 - 08:00
-                            </p>
-
-                        </div>
-
-
-                        <div class="relative shrink-0">
-
-                            <input id="setting-quiet-hours" type="checkbox" class="peer sr-only">
-
-                            <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
-                            </div>
-
-                            <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
-                            </div>
-
-                        </div>
-
-                    </label>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
 
 
                     <!-- DARK MODE -->

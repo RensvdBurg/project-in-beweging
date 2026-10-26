@@ -124,7 +124,11 @@ try {
 ?>
 <div
   class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"
-  id="screen-home">
+  id="screen-home"
+  data-user-id="<?= (int) $_SESSION['user']['id'] ?>"
+  data-challenge-id="<?= $selectedChallenge === null ? '' : (int) $selectedChallenge['id'] ?>"
+  data-challenge-interval="<?= $selectedChallenge === null ? '' : $challengeInterval ?>"
+  data-challenge-title="<?= $selectedChallenge === null ? '' : htmlspecialchars($selectedChallenge['title'], ENT_QUOTES, 'UTF-8') ?>">
 
   <main class="flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
 
@@ -318,6 +322,10 @@ try {
           countdownInterval = window.setInterval(updateCountdown, 1000);
         })();
       </script>
+
+      <script
+        src="/project-in-beweging/assets/js/task-notifications.js?v=<?= filemtime(__DIR__ . '/../../assets/js/task-notifications.js') ?>"
+        defer></script>
     <?php endif; ?>
   </main>
 

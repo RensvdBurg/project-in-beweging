@@ -82,7 +82,7 @@ function footerItemClass(bool $active): string
         <path d="M10 8.5v7l6-3.5-6-3.5z" fill="currentColor" />
       </svg>
 
-      <span>Leaderbord</span>
+      <span>Ranglijst</span>
     </a>
 
     <!-- INSTELLINGEN -->

@@ -9,7 +9,7 @@ $isSettingsPage = str_contains(
 
 $allowedScreens = [
   'home',
-  'bewegen',
+  'ranglijst',
   'leren',
   'stats'
 ];
@@ -63,30 +63,26 @@ function footerItemClass(bool $active): string
     </a>
 
 
-    <!-- BEWEGEN -->
+    <!-- RANGLIJST -->
     <a
-      href="/project-in-beweging/?screen=bewegen"
-      class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'bewegen') ?>"
-      data-screen="bewegen">
+      href="/project-in-beweging/?screen=ranglijst"
+      class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'ranglijst') ?>"
+      data-screen="ranglijst">
       <svg
         width="22"
         height="22"
         viewBox="0 0 24 24"
         fill="none"
         aria-hidden="true">
-        <circle
-          cx="12"
-          cy="12"
-          r="9"
-          stroke="currentColor"
-          stroke-width="1.8" />
-
         <path
-          d="M10 8.5v7l6-3.5-6-3.5z"
-          fill="currentColor" />
+          d="M8 4h8v5a4 4 0 0 1-8 0V4ZM8 6H4v2a4 4 0 0 0 4 4m8-6h4v2a4 4 0 0 1-4 4m-4 1v4m-4 3h8m-6-3h4v3"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round" />
       </svg>
 
-      <span>Bewegen</span>
+      <span>Ranglijst</span>
     </a>
 
 
@@ -185,7 +181,7 @@ function footerItemClass(bool $active): string
 
     /*
      * Op Home kunnen we zonder reload tussen
-     * Home, Bewegen, Leren en Statistieken wisselen.
+     * Home, Ranglijst, Leren en Statistieken wisselen.
      *
      * Op settings.php bestaan deze schermen niet,
      * dus werkt de href gewoon als normale link.
@@ -247,7 +243,7 @@ function footerItemClass(bool $active): string
       /*
        * URL veranderen naar bijvoorbeeld:
        *
-       * ?screen=bewegen
+       * ?screen=ranglijst
        *
        * Daardoor kan je dezelfde pagina
        * ook rechtstreeks openen.

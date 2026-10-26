@@ -403,47 +403,6 @@ $userId = $_SESSION['user']['id']
                     class="settings-card overflow-hidden rounded-[18px] bg-white shadow-[0_4px_14px_rgba(20,28,38,0.05)]">
 
 
-                    <!-- HERINNERINGEN -->
-
-                    <label class="flex cursor-pointer items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Bewegingsherinneringen
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Ontvang meldingen wanneer het
-                                tijd is om te bewegen
-                            </p>
-
-                        </div>
-
-
-                        <div class="relative shrink-0">
-
-                            <input id="setting-reminders" type="checkbox" class="peer sr-only">
-
-                            <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
-                            </div>
-
-                            <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
-                            </div>
-
-                        </div>
-
-                    </label>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
-
-
                     <!-- STILLE UREN -->
 
                     <label class="flex cursor-pointer items-center gap-3 p-4">

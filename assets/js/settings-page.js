@@ -83,10 +83,6 @@
 
     const switches = {
 
-        reminders: document.getElementById(
-            'setting-reminders'
-        ),
-
         quietHours: document.getElementById(
             'setting-quiet-hours'
         ),
@@ -114,8 +110,6 @@
     const settings = {
 
         frequency: 60,
-
-        reminders: true,
 
         quietHours: true,
 
@@ -184,7 +178,6 @@
              * SWITCHES
              */
             [
-                'reminders',
                 'quietHours',
                 'darkMode',
                 'workOnly'

@@ -75,6 +75,11 @@
             'work-hours-summary'
         );
 
+    const workNotificationStatus =
+        document.getElementById(
+            'work-notification-status'
+        );
+
 
 
     /*
@@ -82,14 +87,6 @@
      */
 
     const switches = {
-
-        reminders: document.getElementById(
-            'setting-reminders'
-        ),
-
-        quietHours: document.getElementById(
-            'setting-quiet-hours'
-        ),
 
         darkMode: document.getElementById(
             'setting-dark'
@@ -113,11 +110,7 @@
 
     const settings = {
 
-        frequency: 45,
-
-        reminders: true,
-
-        quietHours: true,
+        frequency: 60,
 
         darkMode: false,
 
@@ -184,8 +177,6 @@
              * SWITCHES
              */
             [
-                'reminders',
-                'quietHours',
                 'darkMode',
                 'workOnly'
             ].forEach((name) => {
@@ -383,6 +374,37 @@
 
     }
 
+    function renderWorkNotificationStatus() {
+        if (!window.isSecureContext) {
+            workNotificationStatus.textContent =
+                'Browsermeldingen werken alleen via HTTPS of localhost.';
+            return;
+        }
+
+        if (!('Notification' in window)) {
+            workNotificationStatus.textContent =
+                'Deze browser ondersteunt geen browsermeldingen.';
+            return;
+        }
+
+        if (!settings.workOnly) {
+            workNotificationStatus.textContent =
+                'Zet deze instelling aan om meldingen bij nieuwe opdrachten te ontvangen.';
+            return;
+        }
+
+        if (Notification.permission === 'granted') {
+            workNotificationStatus.textContent =
+                'Browsermeldingen zijn toegestaan. UpMove moet open zijn om nieuwe opdrachten te signaleren.';
+        } else if (Notification.permission === 'denied') {
+            workNotificationStatus.textContent =
+                'Browsermeldingen zijn geblokkeerd. Pas dit aan via de site-instellingen van je browser.';
+        } else {
+            workNotificationStatus.textContent =
+                'Geef toestemming in je browser om meldingen bij nieuwe opdrachten te ontvangen.';
+        }
+    }
+
 
 
     /*
@@ -521,6 +543,8 @@
                 'UpMove is de hele dag actief';
 
         }
+
+        renderWorkNotificationStatus();
 
 
 
@@ -717,6 +741,33 @@
                 workOnly.checked;
 
             save();
+
+            if (
+                settings.workOnly &&
+                window.isSecureContext &&
+                'Notification' in window &&
+                Notification.permission === 'default'
+            ) {
+                try {
+                    Notification.requestPermission()
+                        .then(renderWorkNotificationStatus)
+                        .catch((error) => {
+                            console.error(
+                                'Browsermeldingstoestemming kon niet worden aangevraagd.',
+                                error
+                            );
+                            workNotificationStatus.textContent =
+                                'Browsermeldingstoestemming kon niet worden aangevraagd.';
+                        });
+                } catch (error) {
+                    console.error(
+                        'Browsermeldingstoestemming kon niet worden aangevraagd.',
+                        error
+                    );
+                    workNotificationStatus.textContent =
+                        'Browsermeldingstoestemming kon niet worden aangevraagd.';
+                }
+            }
 
         }
     );

@@ -122,14 +122,17 @@ try {
   $challengeLoadError = true;
 }
 ?>
+<div
+  class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"
+  id="screen-home">
+
+  <main class="flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
 
 <head>
   <title>Home | UpMove</title>
 </head>
 <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
-  <main class="screen flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6"
-    id="screen-home">
 
     <header class="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-5">
       <div class="min-w-0">

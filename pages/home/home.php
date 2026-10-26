@@ -25,13 +25,6 @@ if (
 }
 
 
-/*
- * CSRF token voor bijvoorbeeld uitloggen.
- */
-if (empty($_SESSION['csrf_token'])) {
-  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-$homeCsrfToken = $_SESSION['csrf_token'];
 $dailyChallengeChangeLimit = 2;
 $today = date('Y-m-d');
 $challengeUsageKey = 'manual_challenge_changes_' . (int) $_SESSION['user']['id'];
@@ -146,12 +139,6 @@ try {
         </h1>
         <p class="text-sm font-bold text-orange">Totaal: <?= (int) ($_SESSION['user']['xp'] ?? 0) ?> XP</p>
       </div>
-      <form method="post" class="mb-4 flex justify-end">
-        <input type="hidden" name="action" value="logout">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
-        <button type="submit"
-          class="rounded-full px-3 py-2 text-xs font-bold text-white hover:bg-[#e02e06] bg-[#ff6b4a] cursor-pointer">Uitloggen</button>
-      </form>
     </header>
 
     <div id="alert-card"

@@ -11,6 +11,7 @@ $isLoggedIn = $currentUser !== null;
 <body>
     <?php if ($isLoggedIn): ?>
         <?php require __DIR__ . '/pages/home/home.php'; ?>
+        <?php require __DIR__ . '/pages/learn/learn.php'; ?>
         <?php require __DIR__ . '/components/footer.php'; ?>
     <?php else: ?>
         <?php require __DIR__ . '/pages/login.php'; ?>

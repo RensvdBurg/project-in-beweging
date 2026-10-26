@@ -161,7 +161,7 @@ try {
         </svg>
       </span>
       <span class="flex min-w-0 flex-col gap-0.5">
-        <strong class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
+        <strong id="alert-title" class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
         <span class="text-[13px] leading-snug text-[#5c616a]">Tijd om op te staan en een snelle 2 min stretch te
           doen.</span>
       </span>
@@ -327,32 +327,107 @@ try {
   (() => {
     const alertCard = document.getElementById('alert-card');
     const dismissButton = document.getElementById('btn-dismiss-alert');
-    const storageKey = 'project-in-beweging:alert-dismissed-until:<?= (int) $_SESSION['user']['id'] ?>';
-    const duration = 60 * 60 * 1000; // 1 uur in milliseconden
+    const alertTitle = document.getElementById('alert-title');
+    const userId = '<?= (int) $_SESSION['user']['id'] ?>';
+    const settingsKey = `upmove:settings:${userId}`;
+    const dismissedUntilKey = `project-in-beweging:alert-dismissed-until:${userId}`;
+    const dismissedAtKey = `project-in-beweging:alert-dismissed-at:${userId}`;
+    const defaultFrequency = 60;
+    let frequency = getReminderFrequency();
     let timer;
+
+    function getReminderFrequency() {
+      let settings;
+      try {
+        settings = JSON.parse(localStorage.getItem(settingsKey) || 'null');
+      } catch (error) {
+        console.error('Kon de herinneringsfrequentie niet lezen.', error);
+        return defaultFrequency;
+      }
+
+      const savedFrequency = settings && typeof settings === 'object'
+        ? settings.frequency
+        : null;
+
+      return Number.isInteger(savedFrequency) &&
+        savedFrequency >= 15 &&
+        savedFrequency <= 120 &&
+        savedFrequency % 15 === 0
+        ? savedFrequency
+        : defaultFrequency;
+    }
+
+    const updateAlertText = () => {
+      alertTitle.textContent = `Te lang gezeten! (${frequency} min)`;
+      dismissButton.setAttribute('aria-label', `Melding sluiten voor ${frequency} minuten`);
+      dismissButton.title = `Sluiten voor ${frequency} minuten`;
+    };
+
+    const getDuration = () => frequency * 60 * 1000;
 
     const showAlert = () => {
       alertCard.classList.remove('hidden');
-      localStorage.removeItem(storageKey);
+      localStorage.removeItem(dismissedUntilKey);
+      localStorage.removeItem(dismissedAtKey);
     };
 
     const scheduleAlert = (showAt) => {
+      window.clearTimeout(timer);
       alertCard.classList.add('hidden');
       timer = window.setTimeout(showAlert, Math.max(0, showAt - Date.now()));
     };
 
-    const dismissedUntil = Number(localStorage.getItem(storageKey));
-    if (Number.isFinite(dismissedUntil) && dismissedUntil > Date.now()) {
-      scheduleAlert(dismissedUntil);
+    const dismissedAt = Number(localStorage.getItem(dismissedAtKey));
+    if (Number.isFinite(dismissedAt) && dismissedAt > 0) {
+      const showAt = dismissedAt + getDuration();
+      if (showAt > Date.now()) {
+        scheduleAlert(showAt);
+      } else {
+        showAlert();
+      }
     } else {
-      localStorage.removeItem(storageKey);
+      const legacyDismissedUntil = Number(localStorage.getItem(dismissedUntilKey));
+      if (Number.isFinite(legacyDismissedUntil) && legacyDismissedUntil > Date.now()) {
+        const legacyDismissedAt = legacyDismissedUntil - 60 * 60 * 1000;
+        localStorage.setItem(dismissedAtKey, String(legacyDismissedAt));
+        const showAt = legacyDismissedAt + getDuration();
+        if (showAt > Date.now()) {
+          scheduleAlert(showAt);
+        } else {
+          showAlert();
+        }
+      } else {
+        localStorage.removeItem(dismissedUntilKey);
+      }
     }
 
     dismissButton.addEventListener('click', () => {
-      window.clearTimeout(timer);
-      const showAt = Date.now() + duration;
-      localStorage.setItem(storageKey, String(showAt));
+      const dismissedAt = Date.now();
+      localStorage.setItem(dismissedAtKey, String(dismissedAt));
+      localStorage.removeItem(dismissedUntilKey);
+      const showAt = dismissedAt + getDuration();
       scheduleAlert(showAt);
     });
+
+    window.addEventListener('storage', (event) => {
+      if (event.key !== settingsKey && event.key !== null) {
+        return;
+      }
+
+      const updatedFrequency = getReminderFrequency();
+      if (updatedFrequency === frequency) {
+        return;
+      }
+
+      frequency = updatedFrequency;
+      updateAlertText();
+
+      const dismissedAt = Number(localStorage.getItem(dismissedAtKey));
+      if (Number.isFinite(dismissedAt) && dismissedAt > 0) {
+        scheduleAlert(dismissedAt + getDuration());
+      }
+    });
+
+    updateAlertText();
   })();
 </script>

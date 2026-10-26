@@ -143,7 +143,7 @@ $userId = $_SESSION['user']['id']
                         </div>
 
 
-                        <input id="setting-frequency" type="range" min="15" max="120" step="15" value="45"
+                        <input id="setting-frequency" type="range" min="15" max="120" step="15" value="60"
                             class="upmove-range block" aria-label="Herinneringsfrequentie">
 
                     </div>

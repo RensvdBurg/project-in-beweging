@@ -113,7 +113,7 @@
 
     const settings = {
 
-        frequency: 45,
+        frequency: 60,
 
         reminders: true,
 

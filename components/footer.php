@@ -6,15 +6,19 @@ $isSettingsPage = str_contains(
   $currentPath,
   '/pages/settings/'
 );
+$isChallengeDescriptionPage = str_contains(
+  $currentPath,
+  '/pages/learn/learn-beschrijving.php'
+);
 
 $allowedScreens = [
   'home',
-  'bewegen',
+  'ranglijst',
   'leren',
   'stats'
 ];
 
-$currentScreen = $_GET['screen'] ?? 'home';
+$currentScreen = $_GET['screen'] ?? ($isChallengeDescriptionPage ? 'leren' : 'home');
 
 if (!in_array($currentScreen, $allowedScreens, true)) {
   $currentScreen = 'home';
@@ -49,6 +53,30 @@ function footerItemClass(bool $active): string
 
       <span>Home</span>
     </a>
+
+
+    <!-- RANGLIJST -->
+    <a
+      href="/project-in-beweging/?screen=ranglijst"
+      class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'ranglijst') ?>"
+      data-screen="ranglijst">
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true">
+        <path
+          d="M8 4h8v5a4 4 0 0 1-8 0V4ZM8 6H4v2a4 4 0 0 0 4 4m8-6h4v2a4 4 0 0 1-4 4m-4 1v4m-4 3h8m-6-3h4v3"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round" />
+      </svg>
+
+      <span>Ranglijst</span>
+    </a>
+
 
     <!-- LEREN -->
     <a href="/project-in-beweging/?screen=leren"
@@ -120,7 +148,7 @@ function footerItemClass(bool $active): string
 
     /*
      * Op Home kunnen we zonder reload tussen
-     * Home, Bewegen, Leren en Statistieken wisselen.
+     * Home, Ranglijst, Leren en Statistieken wisselen.
      *
      * Op settings.php bestaan deze schermen niet,
      * dus werkt de href gewoon als normale link.
@@ -182,7 +210,7 @@ function footerItemClass(bool $active): string
       /*
        * URL veranderen naar bijvoorbeeld:
        *
-       * ?screen=bewegen
+       * ?screen=ranglijst
        *
        * Daardoor kan je dezelfde pagina
        * ook rechtstreeks openen.

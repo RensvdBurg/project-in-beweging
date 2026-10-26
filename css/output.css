@@ -564,6 +564,9 @@
   .overflow-y-auto {
     overflow-y: auto;
   }
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
   .rounded-\[10px\] {
     border-radius: 10px;
   }
@@ -1113,6 +1116,11 @@
   .disabled\:opacity-60:disabled {
     opacity: 60%;
   }
+  @media (prefers-reduced-motion: reduce) {
+    .motion-reduce\:scroll-auto {
+      scroll-behavior: auto;
+    }
+  }
   @media (width >= 700px) {
     .min-\[700px\]\:h-\[34\%\] {
       height: 34%;
@@ -1193,6 +1201,14 @@
 html, body {
   margin: 0;
   min-height: 100%;
+}
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 body {
   font-family: "Montserrat", sans-serif;

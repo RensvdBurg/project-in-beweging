@@ -101,18 +101,6 @@ function footerItemClass(bool $active): string
       <span>Statistieken</span>
     </a>
 
-    <!-- BEWEGEN -->
-    <a href="/project-in-beweging/?screen=bewegen"
-      class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'bewegen') ?>" data-screen="bewegen">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
-
-        <path d="M10 8.5v7l6-3.5-6-3.5z" fill="currentColor" />
-      </svg>
-
-      <span>Ranglijst</span>
-    </a>
-
     <!-- INSTELLINGEN -->
     <a href="/project-in-beweging/pages/settings/settings.php" class="<?= footerItemClass($isSettingsPage) ?>"
       <?= $isSettingsPage ? 'aria-current="page"' : '' ?>>

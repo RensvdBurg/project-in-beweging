@@ -6,6 +6,10 @@ $isSettingsPage = str_contains(
   $currentPath,
   '/pages/settings/'
 );
+$isChallengeDescriptionPage = str_contains(
+  $currentPath,
+  '/pages/learn/learn-beschrijving.php'
+);
 
 $allowedScreens = [
   'home',
@@ -14,7 +18,7 @@ $allowedScreens = [
   'stats'
 ];
 
-$currentScreen = $_GET['screen'] ?? 'home';
+$currentScreen = $_GET['screen'] ?? ($isChallengeDescriptionPage ? 'leren' : 'home');
 
 if (!in_array($currentScreen, $allowedScreens, true)) {
   $currentScreen = 'home';

@@ -49,6 +49,7 @@ require_once __DIR__ . '/../../database/database.php';
 $challengeIntervalSeconds = 90 * 60;
 $challengeInterval = intdiv(time(), $challengeIntervalSeconds);
 $challengeChangeAt = ($challengeInterval + 1) * $challengeIntervalSeconds;
+$noDifferentChallengeAvailable = false;
 
 try {
   $db = getDatabaseConnection();
@@ -80,17 +81,21 @@ try {
     if ($selectedChallenge === null) {
       $previousChallengeId = is_array($savedChallenge) ? (int) ($savedChallenge['id'] ?? 0) : 0;
       $challengeOptions = $challenges;
-      if (count($challengeOptions) > 1 && $previousChallengeId !== 0) {
+      if ($previousChallengeId !== 0) {
         $challengeOptions = array_values(array_filter(
           $challengeOptions,
           static fn(array $challenge): bool => (int) $challenge['id'] !== $previousChallengeId
         ));
       }
-      $selectedChallenge = $challengeOptions[random_int(0, count($challengeOptions) - 1)];
-      $_SESSION['home_challenge'] = [
-        'interval' => $challengeInterval,
-        'id' => (int) $selectedChallenge['id'],
-      ];
+      if ($challengeOptions === []) {
+        $noDifferentChallengeAvailable = true;
+      } else {
+        $selectedChallenge = $challengeOptions[random_int(0, count($challengeOptions) - 1)];
+        $_SESSION['home_challenge'] = [
+          'interval' => $challengeInterval,
+          'id' => (int) $selectedChallenge['id'],
+        ];
+      }
     }
   }
 
@@ -117,6 +122,10 @@ try {
   $challengeLoadError = true;
 }
 ?>
+
+<head>
+  <title>Home | UpMove</title>
+</head>
 <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
   <main class="screen flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6"
@@ -178,7 +187,11 @@ try {
               De opdracht kon niet worden geladen. Probeer het later opnieuw.
             </p>
           <?php elseif ($selectedChallenge === null): ?>
-            <p class="text-sm text-muted">Er is nog geen opdracht beschikbaar.</p>
+            <p class="text-sm text-muted">
+              <?= $noDifferentChallengeAvailable
+                ? 'Er is geen andere opdracht beschikbaar.'
+                : 'Er is nog geen opdracht beschikbaar.' ?>
+            </p>
           <?php else: ?>
             <img src="<?= htmlspecialchars($selectedChallenge['img'], ENT_QUOTES, 'UTF-8') ?>"
               alt="<?= htmlspecialchars($selectedChallenge['title'], ENT_QUOTES, 'UTF-8') ?>"
@@ -213,8 +226,7 @@ try {
       <?php if ($selectedChallenge !== null && !$challengeLoadError): ?>
         <form method="post" class="space-y-3">
           <input type="hidden" name="action" value="complete_challenge">
-          <input type="hidden" name="csrf_token"
-            value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
           <button type="submit"
             class="w-full rounded-xl bg-teal px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             <?= $challengeCompleted ? 'disabled' : '' ?>>
@@ -255,8 +267,7 @@ try {
       <h2 class="mb-3 text-lg font-extrabold tracking-tight">Klaar voor de volgende opdracht?</h2>
       <form method="post" class="rounded-[20px] bg-orange-soft p-4 sm:p-[18px]">
         <input type="hidden" name="action" value="next_challenge">
-        <input type="hidden" name="csrf_token"
-          value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-extrabold text-orange">Direct de volgende opdracht starten?</p>

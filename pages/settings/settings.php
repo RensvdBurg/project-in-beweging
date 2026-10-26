@@ -23,14 +23,9 @@ $userId = $_SESSION['user']['id']
 
     <meta charset="UTF-8">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
-    <meta
-        name="theme-color"
-        content="#f7f8fa"
-        id="theme-color">
+    <meta name="theme-color" content="#f7f8fa" id="theme-color">
 
     <title>Instellingen | UpMove</title>
 
@@ -45,65 +40,46 @@ $userId = $_SESSION['user']['id']
 </head>
 
 
-<body
-    class="min-h-dvh bg-[#f7f8fa] text-[#20242a] antialiased">
+<body class="min-h-dvh bg-[#f7f8fa] text-[#20242a] antialiased">
 
 
-    <div
-        class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
+    <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
         <!-- ========================================= -->
         <!-- SETTINGS -->
         <!-- ========================================= -->
 
-        <main
-            id="screen-settings"
+        <main id="screen-settings"
             class="upmove-settings flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6"
             data-user-id="<?= htmlspecialchars(
-                                (string) $userId,
-                                ENT_QUOTES,
-                                'UTF-8'
-                            ) ?>">
+                (string) $userId,
+                ENT_QUOTES,
+                'UTF-8'
+            ) ?>">
 
 
             <!-- ===================================== -->
             <!-- HEADER -->
             <!-- ===================================== -->
 
-            <header
-                class="relative mb-6 flex min-h-11 items-center justify-center">
+            <header class="relative mb-6 flex min-h-11 items-center justify-center">
 
-                <h1
-                    class="text-[17px] font-extrabold tracking-tight">
+                <h1 class="text-[17px] font-extrabold tracking-tight">
                     Instellingen
                 </h1>
 
 
-                <button
-                    type="button"
+                <button type="button"
                     class="settings-card absolute right-0 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm transition active:scale-95"
                     aria-label="Meldingen">
 
-                    <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 
-                        <path
-                            d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z"
-                            stroke="currentColor"
-                            stroke-width="1.7"
-                            stroke-linecap="round"
-                            stroke-linejoin="round" />
+                        <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor"
+                            stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
 
-                        <path
-                            d="M10 21h4"
-                            stroke="currentColor"
-                            stroke-width="1.7"
-                            stroke-linecap="round" />
+                        <path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
 
                     </svg>
 
@@ -161,97 +137,73 @@ $userId = $_SESSION['user']['id']
                     <div class="p-4">
 
 
-                        <div
-                            class="mb-3 flex items-center justify-between gap-3">
+                        <div class="mb-3 flex items-center justify-between gap-3">
 
                             <div>
 
-                                <label
-                                    for="setting-frequency"
-                                    class="text-[13px] font-bold">
+                                <label for="setting-frequency" class="text-[13px] font-bold">
                                     Herinneringsfrequentie
                                 </label>
 
-                                <p
-                                    class="settings-description mt-0.5 text-[11px] text-[#9299a3]">
+                                <p class="settings-description mt-0.5 text-[11px] text-[#9299a3]">
                                     Hoe vaak wil je een beweegpauze?
                                 </p>
 
                             </div>
 
 
-                            <span
-                                id="settings-frequency-label"
-                                class="shrink-0 text-[12px] font-bold text-orange">
+                            <span id="settings-frequency-label" class="shrink-0 text-[12px] font-bold text-orange">
                                 Elke 45 min
                             </span>
 
                         </div>
 
 
-                        <input
-                            id="setting-frequency"
-                            type="range"
-                            min="15"
-                            max="120"
-                            step="15"
-                            value="45"
-                            class="upmove-range block"
-                            aria-label="Herinneringsfrequentie">
+                        <input id="setting-frequency" type="range" min="15" max="120" step="15" value="45"
+                            class="upmove-range block" aria-label="Herinneringsfrequentie">
 
                     </div>
 
 
 
-                    <div
-                        class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
+                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
 
 
 
                     <!-- DAGDOEL -->
 
-                    <div
-                        class="flex items-center gap-3 p-4">
+                    <div class="flex items-center gap-3 p-4">
 
 
                         <div class="min-w-0 flex-1">
 
-                            <p
-                                class="text-[13px] font-bold">
+                            <p class="text-[13px] font-bold">
                                 Dagelijks sta-doel
                             </p>
 
-                            <p
-                                class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
+                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
                                 Hoe vaak wil je per dag opstaan?
                             </p>
 
                         </div>
 
 
-                        <div
-                            class="flex shrink-0 items-center gap-2">
+                        <div class="flex shrink-0 items-center gap-2">
 
 
-                            <button
-                                type="button"
-                                id="settings-goal-minus"
+                            <button type="button" id="settings-goal-minus"
                                 class="settings-button grid h-8 w-8 place-items-center rounded-lg bg-[#f4f6f8] text-base font-bold transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label="Dagdoel verlagen">
                                 −
                             </button>
 
 
-                            <span
-                                id="settings-goal-value"
-                                class="min-w-6 text-center text-[14px] font-extrabold">
+                            <span id="settings-goal-value" class="min-w-6 text-center text-[14px] font-extrabold">
                                 12
                             </span>
 
 
-                            <button
-                                type="button"
-                                id="settings-goal-plus"
+                            <button type="button" id="settings-goal-plus"
                                 class="settings-button grid h-8 w-8 place-items-center rounded-lg bg-[#f4f6f8] text-base font-bold transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label="Dagdoel verhogen">
                                 +
@@ -287,19 +239,16 @@ $userId = $_SESSION['user']['id']
 
                     <!-- ALLEEN TIJDENS WERK/SCHOOL -->
 
-                    <label
-                        class="flex cursor-pointer items-center gap-3 p-4">
+                    <label class="flex cursor-pointer items-center gap-3 p-4">
 
 
                         <div class="min-w-0 flex-1">
 
-                            <p
-                                class="text-[13px] font-bold">
+                            <p class="text-[13px] font-bold">
                                 Alleen tijdens werk/school
                             </p>
 
-                            <p
-                                class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
+                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
                                 Herinneringen alleen binnen
                                 jouw ingestelde tijden
                             </p>
@@ -309,19 +258,17 @@ $userId = $_SESSION['user']['id']
 
                         <!-- SWITCH -->
 
-                        <div
-                            class="relative shrink-0">
+                        <div class="relative shrink-0">
 
-                            <input
-                                id="setting-work-only"
-                                type="checkbox"
-                                class="peer sr-only">
+                            <input id="setting-work-only" type="checkbox" class="peer sr-only">
 
                             <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]"></div>
+                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
+                            </div>
 
                             <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
+                            </div>
 
                         </div>
 
@@ -331,31 +278,25 @@ $userId = $_SESSION['user']['id']
 
                     <!-- WERKTIJD OPTIES -->
 
-                    <div
-                        id="work-hours-options"
+                    <div id="work-hours-options"
                         class="settings-work-options border-t border-[#eceef2] bg-[#fafbfc] p-4 transition">
 
 
                         <!-- TIJDEN -->
 
-                        <div
-                            class="grid grid-cols-2 gap-3">
+                        <div class="grid grid-cols-2 gap-3">
 
 
                             <!-- START -->
 
                             <div>
 
-                                <label
-                                    for="setting-work-start"
+                                <label for="setting-work-start"
                                     class="settings-label mb-1.5 block text-[11px] font-semibold text-[#858c97]">
                                     Starttijd
                                 </label>
 
-                                <input
-                                    id="setting-work-start"
-                                    type="time"
-                                    value="08:30"
+                                <input id="setting-work-start" type="time" value="08:30"
                                     class="settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange">
 
                             </div>
@@ -366,16 +307,12 @@ $userId = $_SESSION['user']['id']
 
                             <div>
 
-                                <label
-                                    for="setting-work-end"
+                                <label for="setting-work-end"
                                     class="settings-label mb-1.5 block text-[11px] font-semibold text-[#858c97]">
                                     Eindtijd
                                 </label>
 
-                                <input
-                                    id="setting-work-end"
-                                    type="time"
-                                    value="17:00"
+                                <input id="setting-work-end" type="time" value="17:00"
                                     class="settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange">
 
                             </div>
@@ -389,25 +326,19 @@ $userId = $_SESSION['user']['id']
                         <div class="mt-4">
 
 
-                            <p
-                                class="settings-label mb-2 text-[11px] font-semibold text-[#858c97]">
+                            <p class="settings-label mb-2 text-[11px] font-semibold text-[#858c97]">
                                 Werk- / schooldagen
                             </p>
 
 
-                            <div
-                                class="grid grid-cols-7 gap-1.5">
+                            <div class="grid grid-cols-7 gap-1.5">
 
 
                                 <!-- MA -->
 
                                 <label class="cursor-pointer">
 
-                                    <input
-                                        type="checkbox"
-                                        class="work-day peer sr-only"
-                                        value="1"
-                                        checked>
+                                    <input type="checkbox" class="work-day peer sr-only" value="1" checked>
 
                                     <span
                                         class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
@@ -421,11 +352,7 @@ $userId = $_SESSION['user']['id']
 
                                 <label class="cursor-pointer">
 
-                                    <input
-                                        type="checkbox"
-                                        class="work-day peer sr-only"
-                                        value="2"
-                                        checked>
+                                    <input type="checkbox" class="work-day peer sr-only" value="2" checked>
 
                                     <span
                                         class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
@@ -439,11 +366,7 @@ $userId = $_SESSION['user']['id']
 
                                 <label class="cursor-pointer">
 
-                                    <input
-                                        type="checkbox"
-                                        class="work-day peer sr-only"
-                                        value="3"
-                                        checked>
+                                    <input type="checkbox" class="work-day peer sr-only" value="3" checked>
 
                                     <span
                                         class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
@@ -457,11 +380,7 @@ $userId = $_SESSION['user']['id']
 
                                 <label class="cursor-pointer">
 
-                                    <input
-                                        type="checkbox"
-                                        class="work-day peer sr-only"
-                                        value="4"
-                                        checked>
+                                    <input type="checkbox" class="work-day peer sr-only" value="4" checked>
 
                                     <span
                                         class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
@@ -475,11 +394,7 @@ $userId = $_SESSION['user']['id']
 
                                 <label class="cursor-pointer">
 
-                                    <input
-                                        type="checkbox"
-                                        class="work-day peer sr-only"
-                                        value="5"
-                                        checked>
+                                    <input type="checkbox" class="work-day peer sr-only" value="5" checked>
 
                                     <span
                                         class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
@@ -493,10 +408,7 @@ $userId = $_SESSION['user']['id']
 
                                 <label class="cursor-pointer">
 
-                                    <input
-                                        type="checkbox"
-                                        class="work-day peer sr-only"
-                                        value="6">
+                                    <input type="checkbox" class="work-day peer sr-only" value="6">
 
                                     <span
                                         class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
@@ -510,10 +422,7 @@ $userId = $_SESSION['user']['id']
 
                                 <label class="cursor-pointer">
 
-                                    <input
-                                        type="checkbox"
-                                        class="work-day peer sr-only"
-                                        value="0">
+                                    <input type="checkbox" class="work-day peer sr-only" value="0">
 
                                     <span
                                         class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
@@ -530,8 +439,7 @@ $userId = $_SESSION['user']['id']
 
                         <!-- STATUS -->
 
-                        <div
-                            id="work-hours-summary"
+                        <div id="work-hours-summary"
                             class="mt-4 rounded-xl bg-[#eef8f7] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-[#268f85]">
                             Ma t/m Vr · 08:30 - 17:00
                         </div>
@@ -564,19 +472,16 @@ $userId = $_SESSION['user']['id']
 
                     <!-- HERINNERINGEN -->
 
-                    <label
-                        class="flex cursor-pointer items-center gap-3 p-4">
+                    <label class="flex cursor-pointer items-center gap-3 p-4">
 
 
                         <div class="min-w-0 flex-1">
 
-                            <p
-                                class="text-[13px] font-bold">
+                            <p class="text-[13px] font-bold">
                                 Bewegingsherinneringen
                             </p>
 
-                            <p
-                                class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
+                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
                                 Ontvang meldingen wanneer het
                                 tijd is om te bewegen
                             </p>
@@ -586,16 +491,15 @@ $userId = $_SESSION['user']['id']
 
                         <div class="relative shrink-0">
 
-                            <input
-                                id="setting-reminders"
-                                type="checkbox"
-                                class="peer sr-only">
+                            <input id="setting-reminders" type="checkbox" class="peer sr-only">
 
                             <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]"></div>
+                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
+                            </div>
 
                             <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
+                            </div>
 
                         </div>
 
@@ -603,26 +507,22 @@ $userId = $_SESSION['user']['id']
 
 
 
-                    <div
-                        class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
+                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
 
 
 
                     <!-- STILLE UREN -->
 
-                    <label
-                        class="flex cursor-pointer items-center gap-3 p-4">
+                    <label class="flex cursor-pointer items-center gap-3 p-4">
 
 
                         <div class="min-w-0 flex-1">
 
-                            <p
-                                class="text-[13px] font-bold">
+                            <p class="text-[13px] font-bold">
                                 Stille uren
                             </p>
 
-                            <p
-                                class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
+                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
                                 Geen meldingen tussen
                                 21:00 - 08:00
                             </p>
@@ -632,16 +532,15 @@ $userId = $_SESSION['user']['id']
 
                         <div class="relative shrink-0">
 
-                            <input
-                                id="setting-quiet-hours"
-                                type="checkbox"
-                                class="peer sr-only">
+                            <input id="setting-quiet-hours" type="checkbox" class="peer sr-only">
 
                             <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]"></div>
+                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
+                            </div>
 
                             <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
+                            </div>
 
                         </div>
 
@@ -649,26 +548,22 @@ $userId = $_SESSION['user']['id']
 
 
 
-                    <div
-                        class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
+                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
 
 
 
                     <!-- GELUID -->
 
-                    <label
-                        class="flex cursor-pointer items-center gap-3 p-4">
+                    <label class="flex cursor-pointer items-center gap-3 p-4">
 
 
                         <div class="min-w-0 flex-1">
 
-                            <p
-                                class="text-[13px] font-bold">
+                            <p class="text-[13px] font-bold">
                                 Geluidseffecten
                             </p>
 
-                            <p
-                                class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
+                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
                                 Speel een vriendelijke toon
                                 bij een melding
                             </p>
@@ -678,16 +573,15 @@ $userId = $_SESSION['user']['id']
 
                         <div class="relative shrink-0">
 
-                            <input
-                                id="setting-sound"
-                                type="checkbox"
-                                class="peer sr-only">
+                            <input id="setting-sound" type="checkbox" class="peer sr-only">
 
                             <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]"></div>
+                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
+                            </div>
 
                             <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
+                            </div>
 
                         </div>
 
@@ -695,26 +589,22 @@ $userId = $_SESSION['user']['id']
 
 
 
-                    <div
-                        class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
+                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
 
 
 
                     <!-- DARK MODE -->
 
-                    <label
-                        class="flex cursor-pointer items-center gap-3 p-4">
+                    <label class="flex cursor-pointer items-center gap-3 p-4">
 
 
                         <div class="min-w-0 flex-1">
 
-                            <p
-                                class="text-[13px] font-bold">
+                            <p class="text-[13px] font-bold">
                                 Donkere modus
                             </p>
 
-                            <p
-                                class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
+                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
                                 Gebruik het donkere thema
                                 in heel UpMove
                             </p>
@@ -724,16 +614,15 @@ $userId = $_SESSION['user']['id']
 
                         <div class="relative shrink-0">
 
-                            <input
-                                id="setting-dark"
-                                type="checkbox"
-                                class="peer sr-only">
+                            <input id="setting-dark" type="checkbox" class="peer sr-only">
 
                             <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]"></div>
+                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
+                            </div>
 
                             <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5"></div>
+                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
+                            </div>
 
                         </div>
 
@@ -747,8 +636,7 @@ $userId = $_SESSION['user']['id']
             <!-- LOCALSTORAGE FOUT -->
             <!-- ===================================== -->
 
-            <p
-                id="settings-storage-error"
+            <p id="settings-storage-error"
                 class="mt-4 hidden rounded-xl bg-red-50 px-4 py-3 text-[12px] font-medium text-red-600"></p>
 
 

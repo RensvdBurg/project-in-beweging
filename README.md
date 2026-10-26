@@ -4,7 +4,7 @@ Jongeren die leren voor een zittend beroep, zoals programmeren, lopen risico op 
 
 # Icons
 
-Wil je een icon gebruiken doe dan (iconoir-_naam-icon te vinden op: https://iconoir.com/_)
+Wil je een icon gebruiken doe dan (iconoir-_naam-icon te vinden op: https://iconoir.com/)
 
 # install
 
@@ -15,6 +15,8 @@ altijd wanneer je gaat coderen npm run dev
 # Database instellen
 
 Start MySQL via XAMPP en importeer `database/schema.sql` via phpMyAdmin. Dit maakt de database `bewegingsapp` en de tabel `users` aan.
+
+Voer ook `database/challenge_completions.sql` uit in de database `bewegingsapp`. Deze tabel registreert voltooide opdrachten, zodat dezelfde opdracht binnen de actieve opdrachtperiode maar één keer XP oplevert. De XP wordt opgeslagen in `users.xp`.
 
 De standaardverbinding gebruikt `localhost`, database `bewegingsapp`, gebruiker `root` en een leeg wachtwoord. Stel voor een andere omgeving de variabelen `DB_HOST`, `DB_NAME`, `DB_USER` en `DB_PASSWORD` in.
 
@@ -32,7 +34,7 @@ dan als je klaar bent doe je git add .
 git commit -m "korte naam die uitlegt wat je gedaan hebt"
 git push -u origin feature/NaamVanFeature
 
-daarna kan je op github een pull request aanmaken
+daarna kan je op github een pull request aanmaken *base: develop* <- compare(je eigen branch)* van develop naar test daar ga je testen werkt dat merge je hem door naar release. eind van elke week word release naar main gemerged.
 dan kan iemand de code revieuwen testen en mergen
 
 # github error

@@ -20,8 +20,6 @@ $cssVersion = file_exists($cssFile)
     id="theme-color">
 
 <title><?= htmlspecialchars($pageTitle ?? 'In beweging', ENT_QUOTES, 'UTF-8') ?></title>
-
-
 <!-- ========================================= -->
 <!-- GLOBALE INSTELLINGEN -->
 <!-- Dark mode + werk/school instellingen -->

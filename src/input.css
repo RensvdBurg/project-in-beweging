@@ -2,13 +2,249 @@
 
 @source "../*.php";
 @source "../pages";
+@source inline("my-4 mt-3 table h-[210px] w-[210px] flex-shrink border-collapse resize bg-[#ff6b4a] bg-white/70 object-cover text-ink underline filter backdrop-filter hover:bg-[#e02e06] hover:bg-teal-soft disabled:opacity-50 disabled:opacity-60");
+
+@theme {
+  /* Lettertype van de hele app */
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+
+  /* ---------- Kleuren (gebruik in HTML als bg-orange, text-muted, enz.) ---------- */
+  --color-app-bg: #f4f5f7; /* pagina-achtergrond */
+  --color-surface: #ffffff; /* witte kaarten */
+  --color-ink: #1a1a1a; /* hoofdtekst / zwarte knoppen */
+  --color-muted: #8a8f98; /* grijze subtiteltekst */
+  --color-orange: #ff6b4a; /* primaire oranje (ring, play, actieve nav) */
+  --color-orange-soft: #ffe8e1; /* lichte oranje (boost-kaart) */
+  --color-orange-streak: #ffe4d6; /* achtergrond streak-badge */
+  --color-orange-streak-text: #e86a3a; /* tekst streak-badge */
+  --color-teal: #5ecfc0; /* rand timerkaart */
+  --color-teal-soft: #e8faf7; /* icoon-achtergrond timer */
+  --color-alert-bg: #fff6df; /* achtergrond waarschuwing */
+  --color-alert-border: #f0d9a0; /* rand waarschuwing */
+  --color-alert-icon: #f5d76e; /* icoon-achtergrond waarschuwing */
+
+  /* Schaduw onder kaarten */
+  --shadow-card: 0 8px 28px rgba(20, 24, 40, 0.06);
+  --font-sans: "Montserrat", Arial, sans-serif;
+  --color-background: oklch(0.986 0.004 260);
+  --color-foreground: oklch(0.22 0.008 250);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.48 0.01 250);
+  --color-primary: oklch(0.705 0.183 33);
+  --color-primary-foreground: oklch(1 0 0);
+  --color-ring: oklch(0.73 0.14 33);
+  --color-placeholder: oklch(0.78 0.005 250);
+  --color-teal: oklch(0.7 0.13 181);
+  --color-flag-red: oklch(0.54 0.2 27);
+}
+
 :root {
-    --orange: #FF6B4A;
-    --green: #2EC4B6;
-    --secondary-green: #2EC4B6;
-    --background: #F9FAFC;
-    --informatie-text: #D8D8D8;
-    --grijze-vakken: #9CA3AF;
-    --grijze-overlay: 6C727F;
-    --text-koppen: #000000; 
+  --color-oranje: #ff6b4a;
+  --color-groen: #2ec4b6;
+  --color-wit-grijs: #f9fafc;
+  --color-grijs: #d8d8d8;
+  --color-grijs2: #9ca3af;
+  --color-grijs-overlay: #6c727f;
+  --color-zwart: #000000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Montserrat", sans-serif;
+  background: #f9fafc;
+  color: #000000;
+}
+
+/* ==========================================
+   UPMOVE DARK MODE
+   ========================================== */
+
+html.upmove-dark {
+  color-scheme: dark;
+
+  --color-background: #151920;
+  --color-app-bg: #151920;
+
+  --color-surface: #202630;
+  --color-card: #202630;
+
+  --color-foreground: #f4f5f7;
+  --color-card-foreground: #dce1e8;
+
+  --color-muted: #a3acba;
+
+  --color-orange-soft: #382823;
+  --color-orange-streak: #382823;
+
+  --color-teal-soft: #203a37;
+
+  --color-alert-bg: #302b20;
+  --color-alert-border: #71603b;
+}
+
+html.upmove-dark body {
+  background-color: #151920;
+  color: #f4f5f7;
+}
+
+/* Footer */
+
+html.upmove-dark .upmove-footer {
+  background-color: rgb(32 38 48 / 95%);
+  border-color: #343b46;
+}
+
+/* Settings cards */
+
+html.upmove-dark .settings-card {
+  background-color: #202630;
+}
+
+html.upmove-dark .settings-divider {
+  background-color: #343b46;
+}
+
+html.upmove-dark .settings-description,
+html.upmove-dark .settings-section-title,
+html.upmove-dark .settings-label {
+  color: #a3acba;
+}
+
+html.upmove-dark .settings-small-button {
+  background-color: #2a313c;
+  color: #f4f5f7;
+}
+
+html.upmove-dark .settings-time-input {
+  background-color: #2a313c;
+  border-color: #3a424f;
+  color: #f4f5f7;
+}
+
+.upmove-range {
+  --range-progress: 28.5714%;
+
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(
+    to right,
+    #ff6b4a 0 var(--range-progress),
+    #e8ebef var(--range-progress) 100%
+  );
+  cursor: pointer;
+}
+
+.upmove-range::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  border: 3px solid white;
+  border-radius: 999px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #ff6b4a;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.14);
+}
+
+.upmove-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 3px solid white;
+  border-radius: 999px;
+  background: #ff6b4a;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.14);
+}
+
+html.upmove-dark .settings-button {
+  background-color: #2a313c;
+  color: #f4f5f7;
+}
+
+html.upmove-dark .settings-input {
+  background-color: #2a313c;
+  border-color: #3c4654;
+  color: #f4f5f7;
+}
+
+html.upmove-dark .settings-work-options {
+  background-color: #1b2028;
+}
+
+html.upmove-dark .settings-day-label {
+  background-color: #2a313c;
+  color: #a3acba;
+}
+
+html.upmove-dark .work-day:checked + .settings-day-label {
+  background-color: #ff6b4a;
+  color: white;
+}
+
+.account-avatar {
+  background-color: #ffe8e1;
+}
+
+.account-input {
+  color: #20242a;
+}
+
+.account-chevron {
+  transition: transform 150ms ease;
+}
+
+details[open] .account-chevron {
+  transform: rotate(90deg);
+}
+
+.account-dialog[open] {
+  display: block;
+}
+
+.account-dialog::backdrop {
+  backdrop-filter: blur(2px);
+}
+
+html.upmove-dark .account-surface,
+html.upmove-dark .account-dialog {
+  background-color: #202630;
+  color: #f4f5f7;
+}
+
+html.upmove-dark .account-input {
+  border-color: #3c4654;
+  background-color: #2a313c;
+  color: #f4f5f7;
+}
+
+html.upmove-dark .account-avatar {
+  background-color: #382823;
+}
+
+html.upmove-dark .account-surface .settings-divider,
+html.upmove-dark .account-surface .border-t {
+  border-color: #343b46;
+}
+
+html.upmove-dark .account-surface summary:hover,
+html.upmove-dark .account-surface button:hover {
+  background-color: #2a313c;
+}
+
+html.upmove-dark .account-dialog .account-dialog-cancel:hover {
+  background-color: #2a313c;
+}
+
+html.upmove-dark .upmove-settings a.settings-card:hover {
+  background-color: #2a313c;
 }

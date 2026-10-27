@@ -25,6 +25,14 @@ try {
         <p class="mb-1 text-sm font-bold text-orange">Leren &amp; Groeien</p>
         <h1 class="text-2xl font-extrabold tracking-tight">Challenges</h1>
         <p class="mt-1 text-sm text-muted">Kies een challenge en ontdek wat je kunt doen.</p>
+        <?php if (!$challengeLoadError && $challenges !== []): ?>
+            <label class="sr-only" for="challenge-search">Zoek een challenge</label>
+            <div class="relative mt-4">
+                <input id="challenge-search" type="search" autocomplete="off"
+                    placeholder="Zoek een challenge..."
+                    class="w-full rounded-[18px] border border-[#eceef2] bg-surface px-4 py-3 text-left text-sm font-medium shadow-card outline-none transition placeholder:text-muted focus-visible:border-orange focus-visible:ring-2 focus-visible:ring-orange/30">
+            </div>
+        <?php endif; ?>
     </header>
 
     <?php if ($challengeLoadError): ?>
@@ -38,7 +46,15 @@ try {
     <?php else: ?>
         <ul class="space-y-4" id="challenge-list">
             <?php foreach ($challenges as $challenge): ?>
-                <li>
+                <li data-search="<?= htmlspecialchars(
+                    implode(' ', [
+                        $challenge['title'],
+                        $challenge['description'],
+                        $challenge['difficulty'],
+                    ]),
+                    ENT_QUOTES,
+                    'UTF-8'
+                ) ?>">
                     <a href="/project-in-beweging/pages/learn/learn-beschrijving.php?challenge=<?= (int) $challenge['id'] ?>"
                         class="flex items-center gap-4 rounded-[20px] bg-surface p-3 shadow-card transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange">
                         <?php if (!empty($challenge['img'])): ?>
@@ -79,5 +95,10 @@ try {
                 </li>
             <?php endforeach; ?>
         </ul>
+        <p class="mt-4 rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card" id="challenge-search-empty" hidden>
+            Geen challenges gevonden. Probeer een andere zoekterm.
+        </p>
+        <script src="/project-in-beweging/assets/js/challenge-search.js?v=<?= filemtime(__DIR__ . '/../../assets/js/challenge-search.js') ?>"
+            defer></script>
     <?php endif; ?>
 </main>

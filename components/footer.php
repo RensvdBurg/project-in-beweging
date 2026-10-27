@@ -38,10 +38,10 @@ function footerItemClass(bool $active): string
 
 ?>
 
-<nav class="upmove-footer fixed bottom-0 left-0 right-0 z-50 border-t border-[#eceef2] bg-white/95 backdrop-blur-md"
+<nav
+  class="upmove-footer fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-[#eceef2] bg-white/70 shadow-[0_8px_28px_rgba(20,24,40,0.12)] backdrop-blur-md"
   aria-label="Hoofdnavigatie">
-  <div class="mx-auto grid max-w-lg grid-cols-5 px-1.5
-               pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+  <div class="mx-auto grid max-w-lg grid-cols-5 px-1.5 py-2">
 
     <!-- HOME -->
     <a href="/project-in-beweging/?screen=home"

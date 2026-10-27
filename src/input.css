@@ -50,12 +50,28 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
 }
 
 html,
 body {
   margin: 0;
   min-height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
@@ -96,10 +112,14 @@ html.upmove-dark body {
   color: #f4f5f7;
 }
 
+html.upmove-dark .activity-feed-page-link {
+  color: #ffffff;
+}
+
 /* Footer */
 
 html.upmove-dark .upmove-footer {
-  background-color: rgb(32 38 48 / 95%);
+  background-color: rgb(32 38 48 / 78%);
   border-color: #343b46;
 }
 
@@ -229,6 +249,277 @@ html.upmove-dark .account-input {
 
 html.upmove-dark .account-avatar {
   background-color: #382823;
+}
+
+.leaderboard-rank {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 2px solid #e1e5eb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #777f8a;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.leaderboard-rank--gold {
+  border-color: #f2c14e;
+  background: #fff8e7;
+  color: #9a6a00;
+  box-shadow: 0 2px 8px rgb(242 193 78 / 25%);
+}
+
+.leaderboard-rank--silver {
+  border-color: #bbc3ce;
+  background: #f1f3f6;
+  color: #626b77;
+}
+
+.leaderboard-rank--bronze {
+  border-color: #d69a75;
+  background: #fbefe7;
+  color: #99552f;
+}
+
+.leaderboard-avatar {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #ffe8e1, #ffd2c4);
+  box-shadow: 0 2px 8px rgb(26 26 26 / 10%);
+  color: #e86a3a;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.leaderboard-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.leaderboard-podium--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 22rem;
+  margin-inline: auto;
+}
+
+.leaderboard-podium--single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 12rem;
+  margin-inline: auto;
+}
+
+.leaderboard-podium-card {
+  display: flex;
+  min-width: 0;
+  min-height: 10.5rem;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 0.375rem;
+  border: 1px solid #e9edf2;
+  border-radius: 1.25rem;
+  background: #ffffff;
+  text-align: center;
+  box-shadow: 0 8px 28px rgba(20, 24, 40, 0.06);
+}
+
+.leaderboard-podium-card--1 {
+  min-height: 12rem;
+  border-color: #f2c14e;
+  background: linear-gradient(180deg, #fff8e7 0%, #ffffff 80%);
+}
+
+.leaderboard-podium-card--2 {
+  min-height: 10.5rem;
+}
+
+.leaderboard-podium-card--3 {
+  min-height: 10rem;
+}
+
+.leaderboard-podium-rank {
+  align-self: flex-start;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.65rem;
+  background: #f1f3f6;
+  color: #626b77;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.leaderboard-podium-card--1 .leaderboard-podium-rank {
+  background: #f2c14e;
+  color: #533900;
+}
+
+.leaderboard-podium-card--3 .leaderboard-podium-rank {
+  background: #fbefe7;
+  color: #99552f;
+}
+
+.leaderboard-podium-avatar {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  flex-shrink: 0;
+  place-items: center;
+  margin: 0.4rem 0;
+  border: 3px solid #ffffff;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #ffe8e1, #ffd2c4);
+  box-shadow: 0 2px 8px rgb(26 26 26 / 12%);
+  color: #e86a3a;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.leaderboard-podium-card--1 .leaderboard-podium-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-color: #f2c14e;
+}
+
+.leaderboard-podium-name {
+  width: 100%;
+  overflow: hidden;
+  color: #1a1a1a;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-podium-username {
+  width: 100%;
+  overflow: hidden;
+  color: #8a8f98;
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-xp {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: #f4f5f7;
+  color: #e86a3a;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.leaderboard-your-rank {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #ffd2c4;
+  border-radius: 1.25rem;
+  background: #fff5f1;
+}
+
+.leaderboard-your-rank-number {
+  flex-shrink: 0;
+  color: #e86a3a;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+html.upmove-dark .leaderboard-rank {
+  border-color: #3a424f;
+  background: #2a313c;
+  color: #a3acba;
+}
+
+html.upmove-dark .leaderboard-rank--gold {
+  border-color: #9a7936;
+  background: #382f20;
+  color: #f2c14e;
+}
+
+html.upmove-dark .leaderboard-rank--silver {
+  border-color: #59616d;
+  background: #303741;
+  color: #c3cbd5;
+}
+
+html.upmove-dark .leaderboard-rank--bronze {
+  border-color: #81583f;
+  background: #382a22;
+  color: #d69a75;
+}
+
+html.upmove-dark .leaderboard-avatar {
+  border-color: #343b46;
+  background: linear-gradient(145deg, #493128, #382823);
+  color: #ff9d7f;
+}
+
+html.upmove-dark .leaderboard-podium-card {
+  border-color: #343b46;
+  background: #202630;
+}
+
+html.upmove-dark .leaderboard-podium-card--1 {
+  border-color: #9a7936;
+  background: linear-gradient(180deg, #382f20 0%, #202630 80%);
+}
+
+html.upmove-dark .leaderboard-podium-rank {
+  background: #303741;
+  color: #c3cbd5;
+}
+
+html.upmove-dark .leaderboard-podium-card--1 .leaderboard-podium-rank {
+  background: #9a7936;
+  color: #fff3d4;
+}
+
+html.upmove-dark .leaderboard-podium-card--3 .leaderboard-podium-rank {
+  background: #382a22;
+  color: #d69a75;
+}
+
+html.upmove-dark .leaderboard-podium-avatar {
+  border-color: #343b46;
+  background: linear-gradient(145deg, #493128, #382823);
+  color: #ff9d7f;
+}
+
+html.upmove-dark .leaderboard-podium-card--1 .leaderboard-podium-avatar {
+  border-color: #9a7936;
+}
+
+html.upmove-dark .leaderboard-podium-name {
+  color: #f4f5f7;
+}
+
+html.upmove-dark .leaderboard-podium-username {
+  color: #a3acba;
+}
+
+html.upmove-dark .leaderboard-xp {
+  background: #2a313c;
+  color: #ff9d7f;
+}
+
+html.upmove-dark .leaderboard-your-rank {
+  border-color: #69463a;
+  background: #302723;
 }
 
 html.upmove-dark .account-surface .settings-divider,

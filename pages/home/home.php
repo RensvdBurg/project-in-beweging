@@ -25,13 +25,6 @@ if (
 }
 
 
-/*
- * CSRF token voor bijvoorbeeld uitloggen.
- */
-if (empty($_SESSION['csrf_token'])) {
-  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-$homeCsrfToken = $_SESSION['csrf_token'];
 $dailyChallengeChangeLimit = 2;
 $today = date('Y-m-d');
 $challengeUsageKey = 'manual_challenge_changes_' . (int) $_SESSION['user']['id'];
@@ -45,6 +38,7 @@ $challengeCompletionNotice = $_SESSION['challenge_completion_notice'] ?? '';
 unset($_SESSION['challenge_notice'], $_SESSION['challenge_completion_notice']);
 
 require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/../../database/activity-posts.php';
 
 $challengeIntervalSeconds = 90 * 60;
 $challengeInterval = intdiv(time(), $challengeIntervalSeconds);
@@ -121,10 +115,55 @@ try {
   $selectedChallenge = null;
   $challengeLoadError = true;
 }
+
+$activityPageSize = 5;
+$requestedActivityPage = filter_input(
+  INPUT_GET,
+  'activity_page',
+  FILTER_VALIDATE_INT,
+  ['options' => ['min_range' => 1]]
+);
+$activityPage = is_int($requestedActivityPage) ? $requestedActivityPage : 1;
+$activityPosts = [];
+$activityPageCount = 1;
+$activityFeedError = false;
+
+try {
+  $activityDb = getDatabaseConnection();
+  ensureActivityPostsTable($activityDb);
+  $activityCountStatement = $activityDb->query('SELECT COUNT(*) FROM activity_posts');
+  $activityCount = (int) $activityCountStatement->fetchColumn();
+  $activityPageCount = max(1, (int) ceil($activityCount / $activityPageSize));
+  $activityPage = min($activityPage, $activityPageCount);
+  $activityOffset = ($activityPage - 1) * $activityPageSize;
+
+  $activityStatement = $activityDb->prepare(
+    'SELECT activity_posts.title, activity_posts.description,
+            activity_posts.image_filename, activity_posts.created_at,
+            COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name
+     FROM activity_posts
+     LEFT JOIN users ON users.id = activity_posts.user_id
+     ORDER BY activity_posts.created_at DESC, activity_posts.id DESC
+     LIMIT :limit OFFSET :offset'
+  );
+  $activityStatement->bindValue(':limit', $activityPageSize, PDO::PARAM_INT);
+  $activityStatement->bindValue(':offset', $activityOffset, PDO::PARAM_INT);
+  $activityStatement->execute();
+  $activityPosts = $activityStatement->fetchAll();
+} catch (Throwable $exception) {
+  error_log('Activiteitenfeed/databasefout: ' . $exception->getMessage());
+  $activityFeedError = true;
+}
+
+$escapeActivityFeed = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 ?>
 <div
   class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"
-  id="screen-home">
+  id="screen-home"
+  data-user-id="<?= (int) $_SESSION['user']['id'] ?>"
+  data-challenge-id="<?= $selectedChallenge === null ? '' : (int) $selectedChallenge['id'] ?>"
+  data-challenge-interval="<?= $selectedChallenge === null ? '' : $challengeInterval ?>"
+  data-challenge-title="<?= $selectedChallenge === null ? '' : htmlspecialchars($selectedChallenge['title'], ENT_QUOTES, 'UTF-8') ?>">
 
   <main class="flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
 
@@ -134,20 +173,24 @@ try {
 <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
-    <header class="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-5">
+    <header class="mb-4 flex items-start justify-between gap-3 sm:mb-5">
       <div class="min-w-0">
         <p class="mb-0.5 text-sm font-medium text-muted">Welkom terug</p>
         <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
-          Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?> 👋
+          Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?>
         </h1>
         <p class="text-sm font-bold text-orange">Totaal: <?= (int) ($_SESSION['user']['xp'] ?? 0) ?> XP</p>
       </div>
-      <form method="post" class="mb-4 flex justify-end">
-        <input type="hidden" name="action" value="logout">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
-        <button type="submit"
-          class="rounded-full px-3 py-2 text-xs font-bold text-white hover:bg-[#e02e06] bg-[#ff6b4a] cursor-pointer">Uitloggen</button>
-      </form>
+      <a
+        href="/project-in-beweging/pages/activiteit/activiteit.php"
+        class="inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
+      >
+        Activiteiten
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </a>
     </header>
 
     <div id="alert-card"
@@ -161,7 +204,7 @@ try {
         </svg>
       </span>
       <span class="flex min-w-0 flex-col gap-0.5">
-        <strong class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
+        <strong id="alert-title" class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
         <span class="text-[13px] leading-snug text-[#5c616a]">Tijd om op te staan en een snelle 2 min stretch te
           doen.</span>
       </span>
@@ -229,7 +272,7 @@ try {
       <?php if ($selectedChallenge !== null && !$challengeLoadError): ?>
         <form method="post" class="space-y-3">
           <input type="hidden" name="action" value="complete_challenge">
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
           <button type="submit"
             class="w-full rounded-xl bg-teal px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             <?= $challengeCompleted ? 'disabled' : '' ?>>
@@ -270,7 +313,7 @@ try {
       <h2 class="mb-3 text-lg font-extrabold tracking-tight">Klaar voor de volgende opdracht?</h2>
       <form method="post" class="rounded-[20px] bg-orange-soft p-4 sm:p-[18px]">
         <input type="hidden" name="action" value="next_challenge">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-extrabold text-orange">Direct de volgende opdracht starten?</p>
@@ -293,6 +336,68 @@ try {
           </p>
         <?php endif; ?>
       </form>
+      
+    </section>
+
+    <section class="mt-6" id="activity-feed" aria-labelledby="activity-feed-title">
+      <header class="mb-3">
+        <p class="mb-1 text-sm font-bold text-orange">Samen in beweging</p>
+        <h2 id="activity-feed-title" class="text-xl font-extrabold tracking-tight">Activiteiten van iedereen</h2>
+        <p class="mt-1 text-sm text-muted">Bekijk wat de UpMove-community allemaal heeft gedaan.</p>
+      </header>
+
+      <?php if ($activityFeedError): ?>
+        <p class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card" role="alert">
+          De activiteiten konden niet worden geladen. Probeer het later opnieuw.
+        </p>
+      <?php elseif ($activityPosts === []): ?>
+        <p class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card">
+          Er zijn nog geen activiteiten gedeeld. Wees de eerste!
+        </p>
+      <?php else: ?>
+        <ul class="space-y-4">
+          <?php foreach ($activityPosts as $activityPost): ?>
+            <li>
+              <article class="overflow-hidden rounded-[20px] bg-surface shadow-card">
+                <img
+                  src="/project-in-beweging/uploads/activiteiten/<?= rawurlencode($activityPost['image_filename']) ?>"
+                  alt="<?= $escapeActivityFeed($activityPost['title']) ?>"
+                  class="h-48 w-full object-cover"
+                  loading="lazy">
+                <div class="p-4">
+                  <p class="text-xs font-bold text-orange">
+                    <?= $escapeActivityFeed($activityPost['author_name']) ?>
+                  </p>
+                  <h3 class="mt-1 text-base font-extrabold tracking-tight">
+                    <?= $escapeActivityFeed($activityPost['title']) ?>
+                  </h3>
+                  <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">
+                    <?= $escapeActivityFeed($activityPost['description']) ?>
+                  </p>
+                  <time
+                    class="mt-3 block text-xs font-medium text-muted"
+                    datetime="<?= $escapeActivityFeed(date(DATE_ATOM, strtotime($activityPost['created_at']))) ?>">
+                    <?= $escapeActivityFeed(date('d-m-Y H:i', strtotime($activityPost['created_at']))) ?>
+                  </time>
+                </div>
+              </article>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+
+        <?php if ($activityPageCount > 1): ?>
+          <nav class="mt-5 flex flex-wrap justify-center gap-2" aria-label="Pagina's met activiteiten">
+            <?php for ($page = 1; $page <= $activityPageCount; $page++): ?>
+              <a
+                href="/project-in-beweging/?screen=home&amp;activity_page=<?= $page ?>#activity-feed"
+                class="activity-feed-page-link grid h-10 min-w-10 place-items-center rounded-full px-3 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange <?= $page === $activityPage ? 'bg-orange text-white' : 'bg-surface text-ink shadow-card hover:bg-orange-soft' ?>"
+                <?= $page === $activityPage ? 'aria-current="page"' : '' ?>>
+                <?= $page ?>
+              </a>
+            <?php endfor; ?>
+          </nav>
+        <?php endif; ?>
+      <?php endif; ?>
     </section>
 
     <?php if ($selectedChallenge !== null): ?>
@@ -318,6 +423,10 @@ try {
           countdownInterval = window.setInterval(updateCountdown, 1000);
         })();
       </script>
+
+      <script
+        src="/project-in-beweging/assets/js/task-notifications.js?v=<?= filemtime(__DIR__ . '/../../assets/js/task-notifications.js') ?>"
+        defer></script>
     <?php endif; ?>
   </main>
 
@@ -327,32 +436,97 @@ try {
   (() => {
     const alertCard = document.getElementById('alert-card');
     const dismissButton = document.getElementById('btn-dismiss-alert');
-    const storageKey = 'project-in-beweging:alert-dismissed-until:<?= (int) $_SESSION['user']['id'] ?>';
-    const duration = 60 * 60 * 1000; // 1 uur in milliseconden
+    const alertTitle = document.getElementById('alert-title');
+    const userId = '<?= (int) $_SESSION['user']['id'] ?>';
+    const dismissedUntilKey = `project-in-beweging:alert-dismissed-until:${userId}`;
+    const dismissedAtKey = `project-in-beweging:alert-dismissed-at:${userId}`;
+    const defaultFrequency = 60;
+    let frequency = getReminderFrequency();
     let timer;
+
+    function getReminderFrequency() {
+      const savedFrequency = window.upmoveSettings
+        ? window.upmoveSettings.frequency
+        : null;
+
+      return Number.isInteger(savedFrequency) &&
+        savedFrequency >= 15 &&
+        savedFrequency <= 120 &&
+        savedFrequency % 15 === 0
+        ? savedFrequency
+        : defaultFrequency;
+    }
+
+    const updateAlertText = () => {
+      alertTitle.textContent = `Te lang gezeten! (${frequency} min)`;
+      dismissButton.setAttribute('aria-label', `Melding sluiten voor ${frequency} minuten`);
+      dismissButton.title = `Sluiten voor ${frequency} minuten`;
+    };
+
+    const getDuration = () => frequency * 60 * 1000;
 
     const showAlert = () => {
       alertCard.classList.remove('hidden');
-      localStorage.removeItem(storageKey);
+      localStorage.removeItem(dismissedUntilKey);
+      localStorage.removeItem(dismissedAtKey);
     };
 
     const scheduleAlert = (showAt) => {
+      window.clearTimeout(timer);
       alertCard.classList.add('hidden');
       timer = window.setTimeout(showAlert, Math.max(0, showAt - Date.now()));
     };
 
-    const dismissedUntil = Number(localStorage.getItem(storageKey));
-    if (Number.isFinite(dismissedUntil) && dismissedUntil > Date.now()) {
-      scheduleAlert(dismissedUntil);
+    const dismissedAt = Number(localStorage.getItem(dismissedAtKey));
+    if (Number.isFinite(dismissedAt) && dismissedAt > 0) {
+      const showAt = dismissedAt + getDuration();
+      if (showAt > Date.now()) {
+        scheduleAlert(showAt);
+      } else {
+        showAlert();
+      }
     } else {
-      localStorage.removeItem(storageKey);
+      const legacyDismissedUntil = Number(localStorage.getItem(dismissedUntilKey));
+      if (Number.isFinite(legacyDismissedUntil) && legacyDismissedUntil > Date.now()) {
+        const legacyDismissedAt = legacyDismissedUntil - 60 * 60 * 1000;
+        localStorage.setItem(dismissedAtKey, String(legacyDismissedAt));
+        const showAt = legacyDismissedAt + getDuration();
+        if (showAt > Date.now()) {
+          scheduleAlert(showAt);
+        } else {
+          showAlert();
+        }
+      } else {
+        localStorage.removeItem(dismissedUntilKey);
+      }
     }
 
     dismissButton.addEventListener('click', () => {
-      window.clearTimeout(timer);
-      const showAt = Date.now() + duration;
-      localStorage.setItem(storageKey, String(showAt));
+      const dismissedAt = Date.now();
+      localStorage.setItem(dismissedAtKey, String(dismissedAt));
+      localStorage.removeItem(dismissedUntilKey);
+      const showAt = dismissedAt + getDuration();
       scheduleAlert(showAt);
     });
+
+    const refreshFrequency = () => {
+      const updatedFrequency = getReminderFrequency();
+      if (updatedFrequency === frequency) {
+        return;
+      }
+
+      frequency = updatedFrequency;
+      updateAlertText();
+
+      const dismissedAt = Number(localStorage.getItem(dismissedAtKey));
+      if (Number.isFinite(dismissedAt) && dismissedAt > 0) {
+        scheduleAlert(dismissedAt + getDuration());
+      }
+    };
+
+    window.addEventListener('upmove:settings-changed', refreshFrequency);
+    window.addEventListener('upmove:settings-loaded', refreshFrequency);
+
+    updateAlertText();
   })();
 </script>

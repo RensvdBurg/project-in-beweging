@@ -10,6 +10,23 @@ if (empty($_SESSION['user'])) {
     exit;
 }
 
+if (empty($_SESSION['user']['id'])) {
+    http_response_code(401);
+    exit('Je account kon niet worden vastgesteld.');
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/../../database/user-settings.php';
+
+$userSettingsData = getUserSettings(
+    getDatabaseConnection(),
+    (int) $_SESSION['user']['id']
+);
+
 $userId = $_SESSION['user']['id']
     ?? $_SESSION['user']['email']
     ?? $_SESSION['user']['full_name']
@@ -35,7 +52,22 @@ $userId = $_SESSION['user']['id']
         rel="stylesheet"
         href="/project-in-beweging/css/output.css?v=<?= filemtime(__DIR__ . '/../../css/output.css') ?>">
 
-    <script src="/project-in-beweging/assets/js/app-settings.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+
+    <script>
+        window.upmoveInitialSettings = <?= json_encode([
+            'userId' => (int) $_SESSION['user']['id'],
+            'csrfToken' => $_SESSION['csrf_token'],
+            'settings' => $userSettingsData['settings'],
+            'exists' => $userSettingsData['exists'],
+        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>;
+    </script>
+    <script
+        src="/project-in-beweging/assets/js/app-settings.js?v=<?= filemtime(__DIR__ . '/../../assets/js/app-settings.js') ?>"></script>
 
 </head>
 
@@ -143,7 +175,7 @@ $userId = $_SESSION['user']['id']
                         </div>
 
 
-                        <input id="setting-frequency" type="range" min="15" max="120" step="15" value="45"
+                        <input id="setting-frequency" type="range" min="15" max="120" step="15" value="60"
                             class="upmove-range block" aria-label="Herinneringsfrequentie">
 
                     </div>
@@ -182,8 +214,8 @@ $userId = $_SESSION['user']['id']
                             </p>
 
                             <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Herinneringen alleen binnen
-                                jouw ingestelde tijden
+                                Herinneringen en meldingen bij nieuwe opdrachten alleen binnen jouw ingestelde tijden.
+                                UpMove moet open zijn.
                             </p>
 
                         </div>
@@ -377,6 +409,11 @@ $userId = $_SESSION['user']['id']
                             Ma t/m Vr · 08:30 - 17:00
                         </div>
 
+                        <p id="work-notification-status"
+                            class="mt-2 text-[11px] leading-relaxed text-[#858c97]"
+                            role="status"
+                            aria-live="polite"></p>
+
 
                     </div>
 
@@ -401,88 +438,6 @@ $userId = $_SESSION['user']['id']
 
                 <div
                     class="settings-card overflow-hidden rounded-[18px] bg-white shadow-[0_4px_14px_rgba(20,28,38,0.05)]">
-
-
-                    <!-- HERINNERINGEN -->
-
-                    <label class="flex cursor-pointer items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Bewegingsherinneringen
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Ontvang meldingen wanneer het
-                                tijd is om te bewegen
-                            </p>
-
-                        </div>
-
-
-                        <div class="relative shrink-0">
-
-                            <input id="setting-reminders" type="checkbox" class="peer sr-only">
-
-                            <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
-                            </div>
-
-                            <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
-                            </div>
-
-                        </div>
-
-                    </label>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
-
-
-                    <!-- STILLE UREN -->
-
-                    <label class="flex cursor-pointer items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Stille uren
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Geen meldingen tussen
-                                21:00 - 08:00
-                            </p>
-
-                        </div>
-
-
-                        <div class="relative shrink-0">
-
-                            <input id="setting-quiet-hours" type="checkbox" class="peer sr-only">
-
-                            <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
-                            </div>
-
-                            <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
-                            </div>
-
-                        </div>
-
-                    </label>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
 
 
                     <!-- DARK MODE -->
@@ -525,7 +480,7 @@ $userId = $_SESSION['user']['id']
 
             </section>
             <!-- ===================================== -->
-            <!-- LOCALSTORAGE FOUT -->
+            <!-- DATABASE FOUT -->
             <!-- ===================================== -->
 
             <p id="settings-storage-error"

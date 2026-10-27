@@ -1012,6 +1012,10 @@
     --tw-shadow: 0 5px 19px var(--tw-shadow-color, oklch(0.25 0 0/0.18));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
+  .shadow-\[0_6px_16px_rgba\(255\,107\,74\,0\.28\)\] {
+    --tw-shadow: 0 6px 16px var(--tw-shadow-color, rgba(255,107,74,0.28));
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
   .shadow-\[0_7px_19px_oklch\(0\.25_0_0\/0\.16\)\] {
     --tw-shadow: 0 7px 19px var(--tw-shadow-color, oklch(0.25 0 0/0.16));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);

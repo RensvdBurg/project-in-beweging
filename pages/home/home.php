@@ -131,14 +131,24 @@ try {
 <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
-    <header class="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-5">
+    <header class="mb-4 flex items-start justify-between gap-3 sm:mb-5">
       <div class="min-w-0">
         <p class="mb-0.5 text-sm font-medium text-muted">Welkom terug</p>
         <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
-          Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?> 👋
+          Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?>
         </h1>
         <p class="text-sm font-bold text-orange">Totaal: <?= (int) ($_SESSION['user']['xp'] ?? 0) ?> XP</p>
       </div>
+      <a
+        href="/project-in-beweging/pages/activiteit/activiteit.php"
+        class="inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
+      >
+        Activiteiten
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </a>
     </header>
 
     <div id="alert-card"

@@ -112,6 +112,10 @@ html.upmove-dark body {
   color: #f4f5f7;
 }
 
+html.upmove-dark .activity-feed-page-link {
+  color: #ffffff;
+}
+
 /* Footer */
 
 html.upmove-dark .upmove-footer {

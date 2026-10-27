@@ -38,6 +38,7 @@ $challengeCompletionNotice = $_SESSION['challenge_completion_notice'] ?? '';
 unset($_SESSION['challenge_notice'], $_SESSION['challenge_completion_notice']);
 
 require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/../../database/activity-posts.php';
 
 $challengeIntervalSeconds = 90 * 60;
 $challengeInterval = intdiv(time(), $challengeIntervalSeconds);
@@ -114,6 +115,47 @@ try {
   $selectedChallenge = null;
   $challengeLoadError = true;
 }
+
+$activityPageSize = 5;
+$requestedActivityPage = filter_input(
+  INPUT_GET,
+  'activity_page',
+  FILTER_VALIDATE_INT,
+  ['options' => ['min_range' => 1]]
+);
+$activityPage = is_int($requestedActivityPage) ? $requestedActivityPage : 1;
+$activityPosts = [];
+$activityPageCount = 1;
+$activityFeedError = false;
+
+try {
+  $activityDb = getDatabaseConnection();
+  ensureActivityPostsTable($activityDb);
+  $activityCountStatement = $activityDb->query('SELECT COUNT(*) FROM activity_posts');
+  $activityCount = (int) $activityCountStatement->fetchColumn();
+  $activityPageCount = max(1, (int) ceil($activityCount / $activityPageSize));
+  $activityPage = min($activityPage, $activityPageCount);
+  $activityOffset = ($activityPage - 1) * $activityPageSize;
+
+  $activityStatement = $activityDb->prepare(
+    'SELECT activity_posts.title, activity_posts.description,
+            activity_posts.image_filename, activity_posts.created_at,
+            COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name
+     FROM activity_posts
+     LEFT JOIN users ON users.id = activity_posts.user_id
+     ORDER BY activity_posts.created_at DESC, activity_posts.id DESC
+     LIMIT :limit OFFSET :offset'
+  );
+  $activityStatement->bindValue(':limit', $activityPageSize, PDO::PARAM_INT);
+  $activityStatement->bindValue(':offset', $activityOffset, PDO::PARAM_INT);
+  $activityStatement->execute();
+  $activityPosts = $activityStatement->fetchAll();
+} catch (Throwable $exception) {
+  error_log('Activiteitenfeed/databasefout: ' . $exception->getMessage());
+  $activityFeedError = true;
+}
+
+$escapeActivityFeed = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 ?>
 <div
   class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"
@@ -294,6 +336,68 @@ try {
           </p>
         <?php endif; ?>
       </form>
+      
+    </section>
+
+    <section class="mt-6" id="activity-feed" aria-labelledby="activity-feed-title">
+      <header class="mb-3">
+        <p class="mb-1 text-sm font-bold text-orange">Samen in beweging</p>
+        <h2 id="activity-feed-title" class="text-xl font-extrabold tracking-tight">Activiteiten van iedereen</h2>
+        <p class="mt-1 text-sm text-muted">Bekijk wat de UpMove-community allemaal heeft gedaan.</p>
+      </header>
+
+      <?php if ($activityFeedError): ?>
+        <p class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card" role="alert">
+          De activiteiten konden niet worden geladen. Probeer het later opnieuw.
+        </p>
+      <?php elseif ($activityPosts === []): ?>
+        <p class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card">
+          Er zijn nog geen activiteiten gedeeld. Wees de eerste!
+        </p>
+      <?php else: ?>
+        <ul class="space-y-4">
+          <?php foreach ($activityPosts as $activityPost): ?>
+            <li>
+              <article class="overflow-hidden rounded-[20px] bg-surface shadow-card">
+                <img
+                  src="/project-in-beweging/uploads/activiteiten/<?= rawurlencode($activityPost['image_filename']) ?>"
+                  alt="<?= $escapeActivityFeed($activityPost['title']) ?>"
+                  class="h-48 w-full object-cover"
+                  loading="lazy">
+                <div class="p-4">
+                  <p class="text-xs font-bold text-orange">
+                    <?= $escapeActivityFeed($activityPost['author_name']) ?>
+                  </p>
+                  <h3 class="mt-1 text-base font-extrabold tracking-tight">
+                    <?= $escapeActivityFeed($activityPost['title']) ?>
+                  </h3>
+                  <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">
+                    <?= $escapeActivityFeed($activityPost['description']) ?>
+                  </p>
+                  <time
+                    class="mt-3 block text-xs font-medium text-muted"
+                    datetime="<?= $escapeActivityFeed(date(DATE_ATOM, strtotime($activityPost['created_at']))) ?>">
+                    <?= $escapeActivityFeed(date('d-m-Y H:i', strtotime($activityPost['created_at']))) ?>
+                  </time>
+                </div>
+              </article>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+
+        <?php if ($activityPageCount > 1): ?>
+          <nav class="mt-5 flex flex-wrap justify-center gap-2" aria-label="Pagina's met activiteiten">
+            <?php for ($page = 1; $page <= $activityPageCount; $page++): ?>
+              <a
+                href="/project-in-beweging/?screen=home&amp;activity_page=<?= $page ?>#activity-feed"
+                class="activity-feed-page-link grid h-10 min-w-10 place-items-center rounded-full px-3 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange <?= $page === $activityPage ? 'bg-orange text-white' : 'bg-surface text-ink shadow-card hover:bg-orange-soft' ?>"
+                <?= $page === $activityPage ? 'aria-current="page"' : '' ?>>
+                <?= $page ?>
+              </a>
+            <?php endfor; ?>
+          </nav>
+        <?php endif; ?>
+      <?php endif; ?>
     </section>
 
     <?php if ($selectedChallenge !== null): ?>

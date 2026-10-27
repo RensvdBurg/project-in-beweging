@@ -10,6 +10,10 @@ $isChallengeDescriptionPage = str_contains(
   $currentPath,
   '/pages/learn/learn-beschrijving.php'
 );
+$isActivityPage = str_contains(
+  $currentPath,
+  '/pages/activiteit/activiteit.php'
+);
 
 $allowedScreens = [
   'home',
@@ -20,7 +24,9 @@ $allowedScreens = [
 
 $currentScreen = $_GET['screen'] ?? ($isChallengeDescriptionPage ? 'leren' : 'home');
 
-if (!in_array($currentScreen, $allowedScreens, true)) {
+if ($isActivityPage) {
+  $currentScreen = '';
+} elseif (!in_array($currentScreen, $allowedScreens, true)) {
   $currentScreen = 'home';
 }
 

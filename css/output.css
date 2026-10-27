@@ -23,6 +23,8 @@
     --text-base--line-height: calc(1.5 / 1);
     --text-lg: 1.125rem;
     --text-lg--line-height: calc(1.75 / 1.125);
+    --text-xl: 1.25rem;
+    --text-xl--line-height: calc(1.75 / 1.25);
     --text-2xl: 1.5rem;
     --text-2xl--line-height: calc(2 / 1.5);
     --font-weight-medium: 500;
@@ -301,6 +303,9 @@
   .mt-5 {
     margin-top: calc(var(--spacing) * 5);
   }
+  .mt-6 {
+    margin-top: calc(var(--spacing) * 6);
+  }
   .mt-\[14px\] {
     margin-top: 14px;
   }
@@ -390,6 +395,9 @@
   }
   .h-20 {
     height: calc(var(--spacing) * 20);
+  }
+  .h-48 {
+    height: calc(var(--spacing) * 48);
   }
   .h-56 {
     height: calc(var(--spacing) * 56);
@@ -489,6 +497,9 @@
   }
   .min-w-0 {
     min-width: 0px;
+  }
+  .min-w-10 {
+    min-width: calc(var(--spacing) * 10);
   }
   .flex-1 {
     flex: 1;
@@ -867,6 +878,10 @@
     font-size: var(--text-sm);
     line-height: var(--tw-leading, var(--text-sm--line-height));
   }
+  .text-xl {
+    font-size: var(--text-xl);
+    line-height: var(--tw-leading, var(--text-xl--line-height));
+  }
   .text-xs {
     font-size: var(--text-xs);
     line-height: var(--tw-leading, var(--text-xs--line-height));
@@ -1164,6 +1179,9 @@
     .hover\:bg-\[\#fafbfc\]:hover {
       background-color: #fafbfc;
     }
+    .hover\:bg-orange-soft:hover {
+      background-color: var(--color-orange-soft);
+    }
     .hover\:bg-primary\/90:hover {
       background-color: color-mix(in srgb, oklch(0.705 0.183 33) 90%, transparent);
     }
@@ -1385,6 +1403,9 @@ html.upmove-dark {
 html.upmove-dark body {
   background-color: #151920;
   color: #f4f5f7;
+}
+html.upmove-dark .activity-feed-page-link {
+  color: #ffffff;
 }
 html.upmove-dark .upmove-footer {
   background-color: rgb(32 38 48 / 78%);

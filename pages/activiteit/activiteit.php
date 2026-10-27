@@ -29,6 +29,15 @@ $activityError = '';
 $title = '';
 $description = '';
 $activities = [];
+$activityPageSize = 5;
+$requestedActivityPage = filter_input(
+    INPUT_GET,
+    'activity_page',
+    FILTER_VALIDATE_INT,
+    ['options' => ['min_range' => 1]]
+);
+$activityPage = is_int($requestedActivityPage) ? $requestedActivityPage : 1;
+$activityPageCount = 1;
 $activityLoadError = false;
 $activityNotice = is_string($_SESSION['activity_notice'] ?? null)
     ? $_SESSION['activity_notice']
@@ -135,14 +144,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 try {
     $db = getDatabaseConnection();
     ensureActivityPostsTable($db);
+    $countStatement = $db->prepare(
+        'SELECT COUNT(*) FROM activity_posts WHERE user_id = :user_id'
+    );
+    $countStatement->execute(['user_id' => $userId]);
+    $activityCount = (int) $countStatement->fetchColumn();
+    $activityPageCount = max(1, (int) ceil($activityCount / $activityPageSize));
+    $activityPage = min($activityPage, $activityPageCount);
+    $activityOffset = ($activityPage - 1) * $activityPageSize;
+
     $statement = $db->prepare(
         'SELECT title, description, image_filename, created_at
          FROM activity_posts
          WHERE user_id = :user_id
          ORDER BY created_at DESC, id DESC
-         LIMIT 50'
+         LIMIT :limit OFFSET :offset'
     );
-    $statement->execute(['user_id' => $userId]);
+    $statement->bindValue(':user_id', $userId, PDO::PARAM_INT);
+    $statement->bindValue(':limit', $activityPageSize, PDO::PARAM_INT);
+    $statement->bindValue(':offset', $activityOffset, PDO::PARAM_INT);
+    $statement->execute();
     $activities = $statement->fetchAll();
 } catch (Throwable $exception) {
     error_log('Activiteiten/databasefout: ' . $exception->getMessage());
@@ -254,6 +275,19 @@ try {
                         </li>
                     <?php endforeach; ?>
                 </ul>
+
+                <?php if ($activityPageCount > 1): ?>
+                    <nav class="mt-5 flex flex-wrap justify-center gap-2" aria-label="Pagina's met jouw activiteiten">
+                        <?php for ($page = 1; $page <= $activityPageCount; $page++): ?>
+                            <a
+                                href="/project-in-beweging/pages/activiteit/activiteit.php?activity_page=<?= $page ?>#activity-list-title"
+                                class="activity-feed-page-link grid h-10 min-w-10 place-items-center rounded-full px-3 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange <?= $page === $activityPage ? 'bg-orange text-white' : 'bg-surface text-ink shadow-card hover:bg-orange-soft' ?>"
+                                <?= $page === $activityPage ? 'aria-current="page"' : '' ?>>
+                                <?= $page ?>
+                            </a>
+                        <?php endfor; ?>
+                    </nav>
+                <?php endif; ?>
             <?php endif; ?>
         </section>
     </main>

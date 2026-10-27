@@ -10,6 +10,23 @@ if (empty($_SESSION['user'])) {
     exit;
 }
 
+if (empty($_SESSION['user']['id'])) {
+    http_response_code(401);
+    exit('Je account kon niet worden vastgesteld.');
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/../../database/user-settings.php';
+
+$userSettingsData = getUserSettings(
+    getDatabaseConnection(),
+    (int) $_SESSION['user']['id']
+);
+
 $userId = $_SESSION['user']['id']
     ?? $_SESSION['user']['email']
     ?? $_SESSION['user']['full_name']
@@ -41,7 +58,16 @@ $userId = $_SESSION['user']['id']
         href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
         rel="stylesheet">
 
-    <script src="/project-in-beweging/assets/js/app-settings.js"></script>
+    <script>
+        window.upmoveInitialSettings = <?= json_encode([
+            'userId' => (int) $_SESSION['user']['id'],
+            'csrfToken' => $_SESSION['csrf_token'],
+            'settings' => $userSettingsData['settings'],
+            'exists' => $userSettingsData['exists'],
+        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>;
+    </script>
+    <script
+        src="/project-in-beweging/assets/js/app-settings.js?v=<?= filemtime(__DIR__ . '/../../assets/js/app-settings.js') ?>"></script>
 
 </head>
 
@@ -454,7 +480,7 @@ $userId = $_SESSION['user']['id']
 
             </section>
             <!-- ===================================== -->
-            <!-- LOCALSTORAGE FOUT -->
+            <!-- DATABASE FOUT -->
             <!-- ===================================== -->
 
             <p id="settings-storage-error"

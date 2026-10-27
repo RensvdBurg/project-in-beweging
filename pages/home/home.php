@@ -324,7 +324,6 @@ try {
     const dismissButton = document.getElementById('btn-dismiss-alert');
     const alertTitle = document.getElementById('alert-title');
     const userId = '<?= (int) $_SESSION['user']['id'] ?>';
-    const settingsKey = `upmove:settings:${userId}`;
     const dismissedUntilKey = `project-in-beweging:alert-dismissed-until:${userId}`;
     const dismissedAtKey = `project-in-beweging:alert-dismissed-at:${userId}`;
     const defaultFrequency = 60;
@@ -332,16 +331,8 @@ try {
     let timer;
 
     function getReminderFrequency() {
-      let settings;
-      try {
-        settings = JSON.parse(localStorage.getItem(settingsKey) || 'null');
-      } catch (error) {
-        console.error('Kon de herinneringsfrequentie niet lezen.', error);
-        return defaultFrequency;
-      }
-
-      const savedFrequency = settings && typeof settings === 'object'
-        ? settings.frequency
+      const savedFrequency = window.upmoveSettings
+        ? window.upmoveSettings.frequency
         : null;
 
       return Number.isInteger(savedFrequency) &&
@@ -404,11 +395,7 @@ try {
       scheduleAlert(showAt);
     });
 
-    window.addEventListener('storage', (event) => {
-      if (event.key !== settingsKey && event.key !== null) {
-        return;
-      }
-
+    const refreshFrequency = () => {
       const updatedFrequency = getReminderFrequency();
       if (updatedFrequency === frequency) {
         return;
@@ -421,7 +408,10 @@ try {
       if (Number.isFinite(dismissedAt) && dismissedAt > 0) {
         scheduleAlert(dismissedAt + getDuration());
       }
-    });
+    };
+
+    window.addEventListener('upmove:settings-changed', refreshFrequency);
+    window.addEventListener('upmove:settings-loaded', refreshFrequency);
 
     updateAlertText();
   })();

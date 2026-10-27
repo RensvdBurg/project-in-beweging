@@ -6,20 +6,13 @@
   }
 
   const userId = home.dataset.userId;
-  const settingsKey = `upmove:settings:${userId}`;
   const challengeKey = `upmove:last-notified-challenge:${userId}`;
   const pendingKey = `upmove:pending-challenge-notification:${userId}`;
   const currentChallenge = `${home.dataset.challengeInterval}:${home.dataset.challengeId}`;
   const challengeTitle = home.dataset.challengeTitle || 'Er staat een nieuwe opdracht klaar.';
 
   function readSettings() {
-    try {
-      const settings = JSON.parse(localStorage.getItem(settingsKey) || 'null');
-      return settings && typeof settings === 'object' ? settings : null;
-    } catch (error) {
-      console.error('Kon de instellingen voor opdrachtmeldingen niet lezen.', error);
-      return null;
-    }
+    return window.upmoveSettings || null;
   }
 
   function isWithinSchedule(settings, date = new Date()) {
@@ -127,6 +120,8 @@
   }
 
   window.setInterval(checkPendingNotification, 60 * 1000);
+  window.addEventListener('upmove:settings-changed', checkPendingNotification);
+  window.addEventListener('upmove:settings-loaded', checkPendingNotification);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       checkPendingNotification();

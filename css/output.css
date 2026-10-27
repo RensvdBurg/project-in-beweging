@@ -250,14 +250,17 @@
   .top-\[3px\] {
     top: 3px;
   }
-  .right-0 {
-    right: 0px;
-  }
   .bottom-0 {
     bottom: 0px;
   }
+  .bottom-\[calc\(0\.75rem\+env\(safe-area-inset-bottom\)\)\] {
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  }
   .left-0 {
     left: 0px;
+  }
+  .left-1\/2 {
+    left: calc(1 / 2 * 100%);
   }
   .left-\[3px\] {
     left: 3px;
@@ -492,6 +495,10 @@
   }
   .border-collapse {
     border-collapse: collapse;
+  }
+  .-translate-x-1\/2 {
+    --tw-translate-x: calc(calc(1 / 2 * 100%) * -1);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
   }
   .cursor-pointer {
     cursor: pointer;
@@ -733,12 +740,6 @@
       background-color: color-mix(in oklab, var(--color-white) 70%, transparent);
     }
   }
-  .bg-white\/95 {
-    background-color: color-mix(in srgb, #fff 95%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      background-color: color-mix(in oklab, var(--color-white) 95%, transparent);
-    }
-  }
   .fill-primary {
     fill: var(--color-primary);
   }
@@ -822,9 +823,6 @@
   }
   .pb-\[49px\] {
     padding-bottom: 49px;
-  }
-  .pb-\[max\(0\.75rem\,env\(safe-area-inset-bottom\)\)\] {
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
   .pl-\[8px\] {
     padding-left: 8px;
@@ -1022,6 +1020,10 @@
     --tw-shadow: 0 8px 18px var(--tw-shadow-color, rgba(255,107,74,0.35));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
+  .shadow-\[0_8px_28px_rgba\(20\,24\,40\,0\.12\)\] {
+    --tw-shadow: 0 8px 28px var(--tw-shadow-color, rgba(20,24,40,0.12));
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
   .shadow-card {
     --tw-shadow: 0 8px 28px var(--tw-shadow-color, rgba(20, 24, 40, 0.06));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
@@ -1090,6 +1092,9 @@
   .peer-checked\:text-white:is(:where(.peer):checked ~ *) {
     color: var(--color-white);
   }
+  .placeholder\:text-muted::placeholder {
+    color: var(--color-muted);
+  }
   .placeholder\:text-placeholder::placeholder {
     color: var(--color-placeholder);
   }
@@ -1150,6 +1155,9 @@
     }
   }
   .focus\:border-orange:focus {
+    border-color: var(--color-orange);
+  }
+  .focus-visible\:border-orange:focus-visible {
     border-color: var(--color-orange);
   }
   .focus-visible\:ring-2:focus-visible {
@@ -1329,7 +1337,7 @@ html.upmove-dark body {
   color: #f4f5f7;
 }
 html.upmove-dark .upmove-footer {
-  background-color: rgb(32 38 48 / 95%);
+  background-color: rgb(32 38 48 / 78%);
   border-color: #343b46;
 }
 html.upmove-dark .settings-card {
@@ -1673,6 +1681,21 @@ html.upmove-dark .account-dialog .account-dialog-cancel:hover {
 html.upmove-dark .upmove-settings a.settings-card:hover {
   background-color: #2a313c;
 }
+@property --tw-translate-x {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0;
+}
+@property --tw-translate-y {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0;
+}
+@property --tw-translate-z {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0;
+}
 @property --tw-space-y-reverse {
   syntax: "*";
   inherits: false;
@@ -1849,21 +1872,6 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
   syntax: "*";
   inherits: false;
 }
-@property --tw-translate-x {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
-@property --tw-translate-y {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
-@property --tw-translate-z {
-  syntax: "*";
-  inherits: false;
-  initial-value: 0;
-}
 @property --tw-outline-style {
   syntax: "*";
   inherits: false;
@@ -1887,6 +1895,9 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
+      --tw-translate-x: 0;
+      --tw-translate-y: 0;
+      --tw-translate-z: 0;
       --tw-space-y-reverse: 0;
       --tw-border-style: solid;
       --tw-leading: initial;
@@ -1928,9 +1939,6 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
       --tw-backdrop-opacity: initial;
       --tw-backdrop-saturate: initial;
       --tw-backdrop-sepia: initial;
-      --tw-translate-x: 0;
-      --tw-translate-y: 0;
-      --tw-translate-z: 0;
       --tw-outline-style: solid;
       --tw-scale-x: 1;
       --tw-scale-y: 1;

@@ -16,14 +16,8 @@
     }
 
 
-    const userKey =
-        `upmove:settings:${screen.dataset.userId}`;
-
-    const darkModeKey =
-        'upmove:dark-mode';
-
-    const workHoursKey =
-        'upmove:work-hours';
+    const initialSettings =
+        window.upmoveInitialSettings || {};
 
 
 
@@ -132,143 +126,14 @@
 
 
 
-    /*
-     * ==========================================
-     * OPGESLAGEN INSTELLINGEN LADEN
-     * ==========================================
-     */
+    Object.assign(settings, initialSettings.settings || {});
 
-    try {
-
-        const saved =
-            JSON.parse(
-                localStorage.getItem(
-                    userKey
-                )
-            );
-
-
-        if (
-            saved &&
-            typeof saved === 'object'
-        ) {
-
-
-            /*
-             * FREQUENTIE
-             */
-            if (
-                Number.isInteger(
-                    saved.frequency
-                ) &&
-                saved.frequency >= 15 &&
-                saved.frequency <= 120 &&
-                saved.frequency % 15 === 0
-            ) {
-
-                settings.frequency =
-                    saved.frequency;
-
-            }
-
-
-
-            /*
-             * SWITCHES
-             */
-            [
-                'darkMode',
-                'workOnly'
-            ].forEach((name) => {
-
-                if (
-                    typeof saved[name] ===
-                    'boolean'
-                ) {
-
-                    settings[name] =
-                        saved[name];
-
-                }
-
-            });
-
-
-
-            /*
-             * WERKTIJD START
-             */
-            if (
-                typeof saved.workStart ===
-                'string' &&
-                /^\d{2}:\d{2}$/.test(
-                    saved.workStart
-                )
-            ) {
-
-                settings.workStart =
-                    saved.workStart;
-
-            }
-
-
-
-            /*
-             * WERKTIJD EIND
-             */
-            if (
-                typeof saved.workEnd ===
-                'string' &&
-                /^\d{2}:\d{2}$/.test(
-                    saved.workEnd
-                )
-            ) {
-
-                settings.workEnd =
-                    saved.workEnd;
-
-            }
-
-
-
-            /*
-             * WERKDAGEN
-             */
-            if (
-                Array.isArray(
-                    saved.workDays
-                )
-            ) {
-
-                const validDays =
-                    saved.workDays
-                    .map(Number)
-                    .filter(
-                        day =>
-                        Number.isInteger(day) &&
-                        day >= 0 &&
-                        day <= 6
-                    );
-
-
-                if (validDays.length > 0) {
-
-                    settings.workDays = [...new Set(validDays)];
-
-                }
-
-            }
-
+    window.addEventListener('upmove:settings-loaded', (event) => {
+        if (event.detail && typeof event.detail === 'object') {
+            Object.assign(settings, event.detail);
+            render();
         }
-
-    } catch {
-
-        /*
-         * Gebruik standaardwaarden wanneer
-         * localStorage niet gelezen kan worden.
-         */
-
-    }
+    });
 
 
 
@@ -579,102 +444,83 @@
      * ==========================================
      */
 
-    function save() {
+    let saveTimer;
+    let saveInProgress = false;
+    let savePending = false;
+    let saveVersion = 0;
 
-        render();
-
-
-        try {
-
-
-            /*
-             * ALLE SETTINGS PER ACCOUNT
-             */
-
-            localStorage.setItem(
-                userKey,
-                JSON.stringify(
-                    settings
-                )
-            );
-
-
-
-            /*
-             * DARK MODE GLOBAAL
-             *
-             * Andere pagina's hoeven hierdoor
-             * niet te weten welke gebruiker-key
-             * gebruikt wordt.
-             */
-
-            localStorage.setItem(
-                darkModeKey,
-                String(
-                    settings.darkMode
-                )
-            );
-
-
-
-            /*
-             * WERKTIJDEN GLOBAAL
-             */
-
-            localStorage.setItem(
-                workHoursKey,
-                JSON.stringify({
-                    enabled: settings.workOnly,
-
-                    start: settings.workStart,
-
-                    end: settings.workEnd,
-
-                    days: [
-                        ...settings.workDays
-                    ]
-                })
-            );
-
-
-
-            storageError.classList.add(
-                'hidden'
-            );
-
-
-        } catch {
-
-            storageError.textContent =
-                'Je browser kan deze instellingen niet bewaren. Ze blijven actief totdat je de pagina herlaadt.';
-
-
-            storageError.classList.remove(
-                'hidden'
-            );
-
+    async function persistSettings(version) {
+        if (saveInProgress) {
+            savePending = true;
+            return;
         }
 
+        saveInProgress = true;
+        const snapshot = {
+            ...settings,
+            workDays: [...settings.workDays],
+        };
 
-
-        /*
-         * Andere scripts vertellen dat
-         * instellingen veranderd zijn.
-         */
-
-        window.dispatchEvent(
-            new CustomEvent(
-                'upmove:settings-changed', {
-                    detail: {
-                        ...settings,
-                        workDays: [
-                            ...settings.workDays
-                        ]
-                    }
+        try {
+            const response = await fetch(
+                '/project-in-beweging/pages/settings/settings-api.php',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': initialSettings.csrfToken,
+                    },
+                    keepalive: true,
+                    body: JSON.stringify({ settings: snapshot }),
                 }
-            )
+            );
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(
+                    result.error || 'De instellingen konden niet worden opgeslagen.'
+                );
+            }
+
+            if (version === saveVersion) {
+                storageError.classList.add('hidden');
+            }
+        } catch (error) {
+            console.error('Instellingen konden niet in de database worden opgeslagen.', error);
+            if (version === saveVersion) {
+                storageError.textContent =
+                    error.message || 'Je instellingen konden niet in de database worden opgeslagen.';
+                storageError.classList.remove('hidden');
+            }
+        } finally {
+            saveInProgress = false;
+            if (savePending || version !== saveVersion) {
+                savePending = false;
+                persistSettings(saveVersion);
+            }
+        }
+    }
+
+    function save(immediate = false) {
+        render();
+        saveVersion += 1;
+        window.dispatchEvent(
+            new CustomEvent('upmove:settings-changed', {
+                detail: {
+                    ...settings,
+                    workDays: [...settings.workDays],
+                },
+            })
         );
 
+        window.clearTimeout(saveTimer);
+        if (immediate) {
+            persistSettings(saveVersion);
+        } else {
+            saveTimer = window.setTimeout(
+                () => persistSettings(saveVersion),
+                250
+            );
+        }
     }
 
 
@@ -702,6 +548,11 @@
             save();
 
         }
+    );
+
+    frequency.addEventListener(
+        'change',
+        () => save(true)
     );
     /*
      * NORMALE SWITCHES

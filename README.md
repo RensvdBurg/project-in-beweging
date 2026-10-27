@@ -22,6 +22,8 @@ De standaardverbinding gebruikt `localhost`, database `bewegingsapp`, gebruiker 
 
 Registratie bewaart het e-mailadres, de gebruikersnaam, volledige naam en geboortedatum. Het wachtwoord wordt als hash opgeslagen; het herhaalde wachtwoord wordt alleen gebruikt om de invoer te controleren.
 
+Persoonlijke instellingen (bewegingsdoel/herinneringsfrequentie, werk- of schooldagen en -tijden, en dark mode) worden per account opgeslagen in de tabel `user_settings`. De tabel wordt automatisch aangemaakt bij het eerste bezoek van een ingelogde gebruiker; de databasegebruiker heeft daarvoor toestemming nodig om tabellen aan te maken. Bestaande instellingen uit de browser worden eenmalig naar het account overgezet wanneer daarvoor nog geen database-instellingen bestaan.
+
 # github push
 
 voordat je begint doe je:

@@ -5,6 +5,15 @@
     "tailwindcss": "^4.3.3"
   },
   "scripts": {
-    "dev": "npx @tailwindcss/cli -i ./src/input.css -o ./css/output.css --watch"
+    "dev": "npx @tailwindcss/cli -i ./src/input.css -o ./css/output.css --watch",
+    "build": "npm run assets && tailwindcss -i ./src/input.css -o ./css/output.css --minify",
+    "check:build": "node scripts/check-build.mjs",
+    "lint:php": "node scripts/lint-php.mjs",
+    "test": "npm run test:smoke && npm run test:integration",
+    "assets": "node scripts/copy-icons.mjs",
+    "predev": "npm run assets",
+    "test:smoke": "node --test tests/login-smoke.test.mjs",
+    "test:integration": "node --test tests/integration.test.mjs",
+    "test:local": "node scripts/test-xampp.mjs"
   }
 }

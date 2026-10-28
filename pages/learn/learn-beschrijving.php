@@ -8,6 +8,7 @@ if ($currentUser === null) {
 }
 
 require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/challenge-image.php';
 
 $requestedChallengeId = filter_input(
     INPUT_GET,
@@ -37,6 +38,7 @@ if ($requestedChallengeId !== false && $requestedChallengeId !== null) {
 $pageTitle = $viewedChallenge !== null
     ? $viewedChallenge['title'] . ' | In beweging'
     : 'Challenge | In beweging';
+$enableLearnPageTransitions = true;
 
 ?>
 <!doctype html>
@@ -46,7 +48,7 @@ $pageTitle = $viewedChallenge !== null
 </head>
 <body>
     <main class="mx-auto min-h-dvh w-full max-w-lg overflow-y-auto scroll-smooth px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] motion-reduce:scroll-auto sm:px-6">
-        <a href="/project-in-beweging/?screen=leren#challenge-list"
+        <a href="/project-in-beweging/?screen=leren&amp;transition=back#challenge-list"
             class="mb-5 inline-flex items-center gap-2 py-2 text-sm font-bold text-muted transition hover:text-orange"
             aria-label="Terug naar alle challenges">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -59,9 +61,13 @@ $pageTitle = $viewedChallenge !== null
         <?php if ($viewedChallenge !== null): ?>
             <article class="overflow-hidden rounded-[22px] bg-surface shadow-card">
                 <?php if (!empty($viewedChallenge['img'])): ?>
-                    <img src="<?= htmlspecialchars($viewedChallenge['img'], ENT_QUOTES, 'UTF-8') ?>"
+                    <img src="<?= htmlspecialchars(getChallengeImageUrl($viewedChallenge['img'], 1200), ENT_QUOTES, 'UTF-8') ?>"
                         alt="<?= htmlspecialchars($viewedChallenge['title'], ENT_QUOTES, 'UTF-8') ?>"
-                        class="h-56 w-full object-cover" loading="lazy">
+                        class="h-56 w-full object-cover"
+                        width="672"
+                        height="224"
+                        fetchpriority="high"
+                        decoding="async">
                 <?php endif; ?>
                 <div class="p-5 sm:p-7">
                     <p class="mb-2 text-sm font-bold text-orange">Challenge</p>

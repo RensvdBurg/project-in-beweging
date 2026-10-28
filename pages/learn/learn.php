@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/challenge-image.php';
 
 $challenges = [];
 $challengeLoadError = false;
@@ -45,22 +46,26 @@ try {
         </p>
     <?php else: ?>
         <ul class="space-y-4" id="challenge-list">
-            <?php foreach ($challenges as $challenge): ?>
-                <li data-search="<?= htmlspecialchars(
-                    implode(' ', [
-                        $challenge['title'],
-                        $challenge['description'],
-                        $challenge['difficulty'],
-                    ]),
-                    ENT_QUOTES,
-                    'UTF-8'
-                ) ?>">
+            <?php foreach ($challenges as $index => $challenge): ?>
+                <?php
+                $searchText = implode(' ', [
+                    $challenge['title'],
+                    $challenge['description'],
+                    $challenge['difficulty'],
+                ]);
+                ?>
+                <li data-search="<?= htmlspecialchars($searchText, ENT_QUOTES, 'UTF-8') ?>">
                     <a href="/project-in-beweging/pages/learn/learn-beschrijving.php?challenge=<?= (int) $challenge['id'] ?>"
                         class="flex items-center gap-4 rounded-[20px] bg-surface p-3 shadow-card transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange">
                         <?php if (!empty($challenge['img'])): ?>
-                            <img src="<?= htmlspecialchars($challenge['img'], ENT_QUOTES, 'UTF-8') ?>"
+                            <img src="<?= htmlspecialchars(getChallengeImageUrl($challenge['img'], 320), ENT_QUOTES, 'UTF-8') ?>"
                                 alt=""
-                                class="h-20 w-20 shrink-0 rounded-[14px] object-cover" loading="lazy">
+                                class="h-20 w-20 shrink-0 rounded-[14px] object-cover"
+                                width="80"
+                                height="80"
+                                loading="<?= $index < 3 ? 'eager' : 'lazy' ?>"
+                                decoding="async"
+                                <?= $index === 0 ? 'fetchpriority="high"' : '' ?>>
                         <?php else: ?>
                             <span
                                 class="grid h-20 w-20 shrink-0 place-items-center rounded-[14px] bg-orange-soft text-orange"

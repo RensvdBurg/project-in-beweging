@@ -87,6 +87,13 @@ if (!empty($_SESSION['user']['id'])) {
     rel="stylesheet"
     href="/project-in-beweging/css/output.css?v=<?= $cssVersion ?>">
 
+<?php if (!empty($enableLearnPageTransitions)): ?>
+    <?php $learnTransitionCss = __DIR__ . '/../assets/css/learn-page-transition.css'; ?>
+    <link
+        rel="stylesheet"
+        href="/project-in-beweging/assets/css/learn-page-transition.css?v=<?= filemtime($learnTransitionCss) ?>">
+<?php endif; ?>
+
 
 <!-- ========================================= -->
 <!-- FONT -->

@@ -76,7 +76,7 @@ if (!empty($_SESSION['user']['id'])) {
 
 <link
     rel="stylesheet"
-    href="css/iconoir.css">
+    href="/project-in-beweging/css/iconoir.css">
 
 
 <!-- ========================================= -->

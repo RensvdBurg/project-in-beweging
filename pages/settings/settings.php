@@ -36,7 +36,7 @@ $isReturningToSettingsPage = ($_GET['transition'] ?? null) === 'back';
 
 ?>
 <!DOCTYPE html>
-<html lang="nl" class="<?= $isReturningToSettingsPage ? 'settings-page-transition-back' : 'settings-page-transition' ?>">
+<html lang="nl"<?= $isReturningToSettingsPage ? ' class="settings-page-transition-back"' : '' ?>>
 
 <head>
 

@@ -10,11 +10,9 @@ $enableLearnPageTransitions = $isLoggedIn
 $isReturningToLearnPage = $enableLearnPageTransitions
     && $requestedTransition === 'back';
 $enableSettingsPageTransitions = $isLoggedIn;
-$isReturningToSettingsPage = $isLoggedIn
-    && $requestedTransition === 'settings-back';
-$pageTransitionClass = $isReturningToSettingsPage
-    ? 'settings-page-transition-back'
-    : ($isReturningToLearnPage ? 'learn-page-transition-back' : '');
+$pageTransitionClass = $isReturningToLearnPage
+    ? 'learn-page-transition-back'
+    : '';
 ?>
 <!doctype html>
 <html lang="nl"<?= $pageTransitionClass !== '' ? ' class="' . $pageTransitionClass . '"' : '' ?>>

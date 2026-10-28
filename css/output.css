@@ -682,6 +682,9 @@
   .border-alert-border {
     border-color: var(--color-alert-border);
   }
+  .border-orange-soft {
+    border-color: var(--color-orange-soft);
+  }
   .border-teal {
     border-color: var(--color-teal);
   }
@@ -714,6 +717,9 @@
   }
   .bg-alert-icon {
     background-color: var(--color-alert-icon);
+  }
+  .bg-app-bg {
+    background-color: var(--color-app-bg);
   }
   .bg-app-bg\/60 {
     background-color: color-mix(in srgb, #f4f5f7 60%, transparent);
@@ -1316,6 +1322,9 @@
     .sm\:max-w-\[440px\] {
       max-width: 440px;
     }
+    .sm\:grid-cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .sm\:justify-center {
       justify-content: center;
     }
@@ -1751,6 +1760,167 @@ html.upmove-dark .account-dialog .account-dialog-cancel:hover {
 }
 html.upmove-dark .upmove-settings a.settings-card:hover {
   background-color: #2a313c;
+}
+@keyframes home-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes alert-dismiss {
+  to {
+    opacity: 0;
+    transform: translateX(24px) scale(0.96);
+  }
+}
+@keyframes completion-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.94);
+  }
+  65% {
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes completion-button-pop {
+  0% {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 0 rgb(46 196 182 / 35%);
+  }
+  55% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 8px rgb(46 196 182 / 0%);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 4px 14px rgb(46 196 182 / 22%);
+  }
+}
+@keyframes completion-sparkle {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.5) rotate(-20deg);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.15) rotate(16deg);
+  }
+}
+#screen-home .home-motion {
+  animation: home-rise-in 520ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+#screen-home main > div > header.home-motion {
+  animation-delay: 30ms;
+}
+#screen-home #alert-card {
+  animation-delay: 90ms;
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+#screen-home #alert-card.alert-card--appearing {
+  animation: home-rise-in 380ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+#screen-home #alert-card.alert-card--dismissing {
+  animation: alert-dismiss 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+#screen-home main > div > section:nth-of-type(1) {
+  animation-delay: 150ms;
+}
+#screen-home main > div > section:nth-of-type(2) {
+  animation-delay: 210ms;
+}
+#screen-home main > div > section:nth-of-type(3) {
+  animation-delay: 270ms;
+}
+#screen-home #activity-feed {
+  animation-delay: 330ms;
+}
+#screen-home .home-card-interactive, #screen-home .home-action {
+  transition: transform 200ms ease, box-shadow 200ms ease, filter 200ms ease;
+}
+#screen-home .home-card-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgb(20 24 40 / 10%);
+}
+#screen-home .home-action:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.03);
+}
+#screen-home .home-action:active:not(:disabled) {
+  transform: scale(0.97);
+}
+#screen-home .completion-feedback {
+  position: relative;
+  overflow: hidden;
+}
+#screen-home .completion-button--success {
+  background-color: #2ec4b6;
+  box-shadow: 0 4px 14px rgb(46 196 182 / 22%);
+  opacity: 1;
+  animation: completion-button-pop 520ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+#screen-home .completion-button-check {
+  animation: completion-pop 420ms 120ms both;
+}
+#screen-home .completion-feedback--success {
+  border: 1px solid rgb(46 196 182 / 35%);
+  background: linear-gradient(110deg, #e8faf7, #ffffff 78%);
+  animation: completion-pop 560ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+#screen-home .completion-feedback--success::before, #screen-home .completion-feedback--success::after {
+  position: absolute;
+  color: #ff9a45;
+  content: "✦";
+  pointer-events: none;
+  animation: completion-sparkle 800ms ease-out both;
+}
+#screen-home .completion-feedback--success::before {
+  top: 0.5rem;
+  right: 0.9rem;
+  font-size: 1rem;
+}
+#screen-home .completion-feedback--success::after {
+  top: 1.25rem;
+  right: 2rem;
+  color: #2ec4b6;
+  font-size: 0.75rem;
+  animation-delay: 100ms;
+}
+#screen-home .completion-feedback--success .completion-check {
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: #2ec4b6;
+  color: white;
+}
+#screen-home .completion-feedback--success .completion-check svg {
+  animation: completion-pop 420ms 120ms both;
+}
+html.upmove-dark #screen-home .completion-feedback--success {
+  background: linear-gradient(110deg, #203a37, #202630 78%);
+}
+@media (prefers-reduced-motion: reduce) {
+  #screen-home .home-motion, #screen-home #alert-card.alert-card--dismissing, #screen-home .completion-button--success, #screen-home .completion-button-check, #screen-home .completion-feedback--success, #screen-home .completion-feedback--success .completion-check svg, #screen-home .completion-feedback--success::before, #screen-home .completion-feedback--success::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  #screen-home .home-card-interactive, #screen-home .home-action, #screen-home #alert-card {
+    transition-duration: 0.01ms !important;
+  }
 }
 @property --tw-translate-x {
   syntax: "*";

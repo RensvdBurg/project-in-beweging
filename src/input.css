@@ -827,6 +827,62 @@ html.upmove-dark #screen-home .completion-feedback--success {
   box-shadow: 0 8px 20px rgb(20 24 40 / 9%);
 }
 
+@keyframes learn-card-enter {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+#screen-leren:not(.hidden) > header {
+  animation: learn-card-enter 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li {
+  animation: learn-card-enter 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(5) {
+  animation-delay: 240ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(6) {
+  animation-delay: 300ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(7) {
+  animation-delay: 360ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(8) {
+  animation-delay: 420ms;
+}
+
+#screen-leren #challenge-list > li > a img {
+  transition: scale 220ms ease;
+}
+
+#screen-leren #challenge-list > li > a:hover img {
+  scale: 1.04;
+}
+
 @media (prefers-reduced-motion: reduce) {
   #screen-home .home-motion,
   #screen-home #alert-card.alert-card--dismissing,
@@ -858,4 +914,16 @@ html.upmove-dark #screen-home .completion-feedback--success {
   #screen-ranglijst ol > li {
     transition-duration: 0.01ms !important;
   }
+
+  #screen-leren:not(.hidden) > header,
+  #screen-leren:not(.hidden) #challenge-list > li {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  #screen-leren #challenge-list > li > a img {
+    transition-duration: 0.01ms !important;
+  }
+
 }

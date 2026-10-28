@@ -59,12 +59,13 @@ if (!empty($_SESSION['user']['id'])) {
 <!-- Dark mode + werk/school instellingen -->
 <!-- ========================================= -->
 
-<script>
-    window.upmoveInitialSettings = <?= json_encode(
-        $initialSettings,
-        JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR
-    ) ?>;
-</script>
+<meta
+    name="upmove-initial-settings"
+    content="<?= htmlspecialchars(
+        json_encode($initialSettings, JSON_THROW_ON_ERROR),
+        ENT_QUOTES,
+        'UTF-8'
+    ) ?>">
 <script
     src="/project-in-beweging/assets/js/app-settings.js?v=<?= filemtime(__DIR__ . '/../assets/js/app-settings.js') ?>"></script>
 
@@ -92,6 +93,13 @@ if (!empty($_SESSION['user']['id'])) {
     <link
         rel="stylesheet"
         href="/project-in-beweging/assets/css/learn-page-transition.css?v=<?= filemtime($learnTransitionCss) ?>">
+<?php endif; ?>
+
+<?php if (!empty($enableSettingsPageTransitions)): ?>
+    <?php $settingsTransitionCss = __DIR__ . '/../assets/css/settings-page-transition.css'; ?>
+    <link
+        rel="stylesheet"
+        href="/project-in-beweging/assets/css/settings-page-transition.css?v=<?= filemtime($settingsTransitionCss) ?>">
 <?php endif; ?>
 
 

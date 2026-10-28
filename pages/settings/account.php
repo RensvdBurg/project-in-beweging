@@ -209,9 +209,10 @@ if (is_array($accountUser)) {
 }
 $initials = $initials !== '' ? strtoupper($initials) : '?';
 
+$enableSettingsPageTransitions = true;
 ?>
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="nl" class="settings-page-transition">
 <head>
     <!-- Deel de globale font-, CSS- en dark-mode-instellingen met de rest van de app. -->
     <?php $pageTitle = 'Account | UpMove'; ?>
@@ -223,7 +224,7 @@ $initials = $initials !== '' ? strtoupper($initials) : '?';
             <!-- Navigatie en profielkaart vormen de kop van de accountinstellingen. -->
             <header class="relative mb-6 flex min-h-11 items-center justify-center">
                 <a
-                    href="/project-in-beweging/pages/settings/settings.php"
+                    href="/project-in-beweging/pages/settings/settings.php?transition=back"
                     class="settings-card absolute left-0 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm transition hover:bg-[#f4f6f8] active:scale-95 focus-visible:outline-2 focus-visible:outline-orange"
                     aria-label="Terug naar instellingen">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">

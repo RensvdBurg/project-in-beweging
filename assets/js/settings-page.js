@@ -567,8 +567,10 @@
                 'change',
                 () => {
 
-                    settings[name] =
-                        input.checked;
+                    if (name === 'darkMode') {
+                        animateDarkModeChange(input.checked);
+                        return;
+                    }
 
                     save();
 
@@ -577,6 +579,44 @@
 
         }
     );
+
+    let darkModeTransitionTimer;
+    let darkModeTransitionVersion = 0;
+
+    function animateDarkModeChange(enabled) {
+        const prefersReducedMotion = window.matchMedia(
+            '(prefers-reduced-motion: reduce)'
+        ).matches;
+
+        if (prefersReducedMotion) {
+            settings.darkMode = enabled;
+            save();
+            return;
+        }
+
+        const version = ++darkModeTransitionVersion;
+        const root = document.documentElement;
+
+        window.clearTimeout(darkModeTransitionTimer);
+        root.classList.add('settings-theme-transition');
+
+        window.requestAnimationFrame(() => {
+            if (version !== darkModeTransitionVersion) {
+                return;
+            }
+
+            settings.darkMode = enabled;
+            save();
+
+            darkModeTransitionTimer = window.setTimeout(() => {
+                if (version !== darkModeTransitionVersion) {
+                    return;
+                }
+
+                root.classList.remove('settings-theme-transition');
+            }, 300);
+        });
+    }
 
 
 

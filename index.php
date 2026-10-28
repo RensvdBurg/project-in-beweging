@@ -29,7 +29,7 @@ $pageTransitionClass = $isReturningToLearnPage
         <?php require __DIR__ . '/components/footer.php'; ?>
     <?php else: ?>
         <?php require __DIR__ . '/pages/login.php'; ?>
-        <script src="/project-in-beweging/assets/js/login.js?v=<?= filemtime(__DIR__ . '/../../assets/js/login.js') ?>"></script>
+        <script src="/project-in-beweging/assets/js/login.js?v=<?= filemtime(__DIR__ . '/assets/js/login.js') ?>"></script>
     <?php endif; ?>
 </body>
 

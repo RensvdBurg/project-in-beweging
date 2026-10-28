@@ -29,7 +29,7 @@ $currentYear = (int) date('Y');
     <div class="relative z-10 w-full max-w-[402px] sm:max-w-[440px]">
         <div id="logo" class="<?= $activeAuthMode === 'register' ? 'mb-[24px]' : 'mb-[133px]' ?> ml-[calc(50%-147px)] flex items-center gap-[6px] sm:ml-[22px]">
             <span class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[10px] bg-card shadow-[0_5px_19px_oklch(0.25_0_0/0.18)]" aria-hidden="true">
-                <svg class="h-5 w-5 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="h-5 w-5 text-[#17685b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
                 </svg>
             </span>
@@ -43,7 +43,7 @@ $currentYear = (int) date('Y');
                 <form method="post">
                     <input type="hidden" name="action" value="logout">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
-                    <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Uitloggen</button>
+                    <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-ink shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Uitloggen</button>
                 </form>
             <?php else: ?>
                 <h1 id="loginTitle" class="mb-[16px] text-[20px] font-semibold text-card-foreground">Aanmelden</h1>
@@ -52,16 +52,16 @@ $currentYear = (int) date('Y');
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
                     <div class="flex flex-col gap-[22px]">
                         <label class="sr-only" for="loginEmail">Gebruikersnaam of e-mailadres</label>
-                        <input id="loginEmail" required name="email" autocomplete="username" placeholder="Gebruikersnaam/e-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                        <input id="loginEmail" required name="email" autocomplete="username" placeholder="Gebruikersnaam/e-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                         <label class="sr-only" for="loginPassword">Wachtwoord</label>
-                        <input id="loginPassword" required type="password" name="password" autocomplete="current-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                        <input id="loginPassword" required type="password" name="password" autocomplete="current-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                     </div>
                     <?php if ($authMessage !== '' && $activeAuthMode === 'login'): ?>
-                        <p id="loginStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-teal' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                        <p id="loginStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-[#17685b]' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
                     <?php endif; ?>
-                    <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Aanmelden</button>
+                    <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-ink shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Aanmelden</button>
                 </form>
-                <p class="mt-[14px] text-center text-[10px] font-medium text-placeholder">Heb je nog geen account? <button type="button" data-mode="register" class="cursor-pointer font-semibold text-teal hover:underline">Registreren</button></p>
+                <p class="mt-[14px] text-center text-[10px] font-medium text-[#595959]">Heb je nog geen account? <button type="button" data-mode="register" class="cursor-pointer font-semibold text-[#17685b] hover:underline">Registreren</button></p>
             <?php endif; ?>
         </section>
 
@@ -73,13 +73,13 @@ $currentYear = (int) date('Y');
                 <div class="flex flex-col gap-[15px]">
                     <div>
                         <label class="sr-only" for="registerEmail">E-mailadres</label>
-                        <input id="registerEmail" required type="email" name="email" autocomplete="email" placeholder="E-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                        <input id="registerEmail" required type="email" name="email" autocomplete="email" placeholder="E-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                         <p class="mt-1 pl-[14px] text-[10px] font-medium text-card-foreground">Je ontvangt mogelijk meldingen van ons.</p>
                     </div>
                     <label class="sr-only" for="registerPassword">Wachtwoord</label>
-                    <input id="registerPassword" required type="password" name="password" autocomplete="new-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <input id="registerPassword" required type="password" name="password" autocomplete="new-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                     <label class="sr-only" for="confirmPassword">Wachtwoord herhalen</label>
-                    <input id="confirmPassword" required type="password" name="confirmPassword" autocomplete="new-password" placeholder="Wachtwoord herhalen" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <input id="confirmPassword" required type="password" name="confirmPassword" autocomplete="new-password" placeholder="Wachtwoord herhalen" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                     <fieldset>
                         <legend class="mb-[12px] pl-[8px] text-[16px] font-semibold text-card-foreground">Geboortedatum</legend>
                         <div class="flex gap-[12px]">
@@ -107,16 +107,16 @@ $currentYear = (int) date('Y');
                         </div>
                     </fieldset>
                     <label class="sr-only" for="fullName">Volledige naam</label>
-                    <input id="fullName" required name="fullName" autocomplete="name" placeholder="Volledige naam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <input id="fullName" required name="fullName" autocomplete="name" placeholder="Volledige naam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                     <label class="sr-only" for="username">Gebruikersnaam</label>
-                    <input id="username" required name="username" autocomplete="username" placeholder="Gebruikersnaam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-placeholder focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <input id="username" required name="username" autocomplete="username" placeholder="Gebruikersnaam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                 </div>
                 <?php if ($authMessage !== '' && $activeAuthMode === 'register'): ?>
-                    <p id="registerStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-teal' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                    <p id="registerStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-[#17685b]' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
                 <?php endif; ?>
-                <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-primary-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Registreren</button>
+                <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-ink shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Registreren</button>
             </form>
-            <p class="mt-[14px] text-center text-[10px] font-medium text-placeholder">Heb je al een account? <button type="button" data-mode="login" class="cursor-pointer font-semibold text-teal hover:underline">Aanmelden</button></p>
+            <p class="mt-[14px] text-center text-[10px] font-medium text-[#595959]">Heb je al een account? <button type="button" data-mode="login" class="cursor-pointer font-semibold text-[#17685b] hover:underline">Aanmelden</button></p>
         </section>
     </div>
 </main>

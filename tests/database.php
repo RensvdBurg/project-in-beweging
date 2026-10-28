@@ -19,9 +19,37 @@ if ($operation === 'create') {
 if ($operation === 'drop') { $db->exec("DROP DATABASE `$name`"); exit; }
 $db->exec("USE `$name`");
 if ($operation === 'init') {
-    foreach (['database/schema.sql', 'database/challenge_completions.sql', 'tests/fixtures.sql'] as $file) {
+    foreach (['database/schema.sql', 'database/challenge_completions.sql', 'database/migrations/001_login_rate_limits.sql', 'tests/fixtures.sql'] as $file) {
         $db->exec(file_get_contents(__DIR__ . '/../' . $file));
     }
+} elseif ($operation === 'migrate-check') {
+    $before = $db->query('SELECT * FROM users ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+    $settingsBefore = $db->query('SELECT * FROM user_settings ORDER BY user_id')->fetchAll(PDO::FETCH_ASSOC);
+    $db->exec('DROP TABLE login_rate_limits'); // Only this randomly generated test database.
+    for ($i = 0; $i < 2; $i++) $db->exec(file_get_contents(__DIR__ . '/../database/migrations/001_login_rate_limits.sql'));
+    if ($before !== $db->query('SELECT * FROM users ORDER BY id')->fetchAll(PDO::FETCH_ASSOC)
+        || $settingsBefore !== $db->query('SELECT * FROM user_settings ORDER BY user_id')->fetchAll(PDO::FETCH_ASSOC)) {
+        throw new RuntimeException('Migration modified existing account data');
+    }
+} elseif ($operation === 'extra-challenges') {
+    $db->exec("INSERT INTO challenges (title, description, description_extra, difficulty, xp_reward) VALUES
+        ('CI tweede', 'Sta op', '', 'Makkelijk', 25), ('CI derde', 'Loop', '', 'Makkelijk', 25)");
+} elseif ($operation === 'rank-fixtures') {
+    $db->beginTransaction();
+    $insert = $db->prepare('INSERT INTO users (email, username, password_hash, full_name, birth_date, xp) VALUES (?, ?, ?, ?, ?, ?)');
+    $ids = [];
+    for ($i = 0; $i < 1000; $i++) {
+        $name = sprintf('rank_%04d', $i);
+        $insert->execute([$name . '@example.invalid', $name, 'disabled-test-account', $name, '2000-01-01', $i < 2 ? 50 : 0]);
+        if ($i < 2) $ids[] = (int) $db->lastInsertId();
+    }
+    $db->commit();
+    echo json_encode($ids);
+} elseif ($operation === 'clear-rank-fixtures') {
+    $db->exec("DELETE FROM users WHERE username LIKE 'rank\\_%'");
+} elseif ($operation === 'reset-completions') {
+    $db->exec('DELETE FROM challenge_completions');
+    $db->exec('UPDATE users SET xp = 0');
 } elseif ($operation === 'inspect') {
     $users = $db->query('SELECT password_hash, xp FROM users ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode([

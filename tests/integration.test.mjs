@@ -1,3 +1,5 @@
+import { extendedChecks } from './extended.mjs';
+import { browserChecks } from './browser.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -8,24 +10,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-test('isolated database and real HTTP account lifecycle', { timeout: 60000 }, async t => {
+test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, async t => {
   assert.ok(process.env.TEST_DB_PORT, 'Set TEST_DB_PORT for a disposable loopback database server');
   const php = process.env.PHP_BINARY || 'php';
   const env = { ...process.env, DB_HOST: '127.0.0.1',
     DB_PORT: process.env.TEST_DB_PORT, DB_NAME: `in_beweging_test_${randomBytes(8).toString('hex')}`,
-    DB_USER: process.env.TEST_DB_USER || 'root', DB_PASSWORD: process.env.TEST_DB_PASSWORD || '' };
+    ACTIVITY_UPLOAD_DIR: '', DB_USER: process.env.TEST_DB_USER || 'root', DB_PASSWORD: process.env.TEST_DB_PASSWORD || '' };
   const db = operation => execFileSync(php, ['tests/database.php', operation], { env, windowsHide: true }).toString();
   db('create');
   t.after(() => db('drop'));
   db('init');
   const state = () => JSON.parse(db('inspect'));
   const sessions = await mkdtemp(join(tmpdir(), 'in-beweging-integration-'));
+  env.ACTIVITY_UPLOAD_DIR = join(sessions, 'uploads');
   const socket = createServer();
   await new Promise((resolve, reject) => { socket.once('error', reject); socket.listen(0, '127.0.0.1', resolve); });
   const port = socket.address().port;
   await new Promise(resolve => socket.close(resolve));
   const server = spawn(php, ['-d', `session.save_path=${sessions}`, '-d', 'display_errors=1',
-    '-S', `127.0.0.1:${port}`, '-t', '.'], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    '-d', 'upload_max_filesize=8M', '-d', 'post_max_size=10M', '-S', `127.0.0.1:${port}`, '-t', '.', 'tests/router.php'], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = '', startupError;
   server.on('error', error => { startupError = error; });
   server.stdout.on('data', data => { logs += data; });
@@ -38,11 +41,11 @@ test('isolated database and real HTTP account lifecycle', { timeout: 60000 }, as
     try { await fetch(`http://127.0.0.1:${port}/index.php`, { signal: AbortSignal.timeout(500) }); break; }
     catch { if (i === 49) throw new Error(logs); await delay(100); }
   }
-  const client = () => {
+  const client = (serverPort = port) => {
     let cookie = '', token = '';
     return {
       async request(path = '/index.php', options = {}) {
-        const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        const response = await fetch(`http://127.0.0.1:${serverPort}${path}`, {
           ...options, redirect: 'manual', signal: AbortSignal.timeout(5000),
           headers: { Cookie: cookie, ...options.headers },
         });
@@ -56,6 +59,13 @@ test('isolated database and real HTTP account lifecycle', { timeout: 60000 }, as
         return { status: response.status, body };
       },
       post(values) { return this.request('/index.php', { method: 'POST', body: new URLSearchParams({ csrf_token: token, ...values }) }); },
+      form(path, values) { return this.request(path, { method: 'POST', body: new URLSearchParams({ csrf_token: token, ...values }) }); },
+      upload(data, filename, type) {
+        const body = new FormData();
+        for (const [key, value] of Object.entries({ csrf_token: token, title: '<script>alert(1)</script>', description: 'CI image' })) body.set(key, value);
+        body.set('photo', new Blob([data], { type }), filename);
+        return this.request('/pages/activiteit/activiteit.php', { method: 'POST', body });
+      },
       settings(settings, validToken = true) { return this.request('/pages/settings/settings-api.php', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': validToken ? token : 'invalid' },
         body: JSON.stringify({ settings }),
@@ -121,5 +131,7 @@ test('isolated database and real HTTP account lifecycle', { timeout: 60000 }, as
     assert.equal((await user.request('/pages/settings/settings-api.php')).status, 200);
     assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
   });
+  await browserChecks(t, `http://127.0.0.1:${port}`);
+  await extendedChecks({ t, user, client, db, state, env, php, sessions, port });
   assert.doesNotMatch(logs, /PHP (?:Warning|Fatal|Parse)|databasefout|SQLSTATE/);
 });

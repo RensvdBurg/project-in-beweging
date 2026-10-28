@@ -9,11 +9,18 @@
     "build": "npm run assets && tailwindcss -i ./src/input.css -o ./css/output.css --minify",
     "check:build": "node scripts/check-build.mjs",
     "lint:php": "node scripts/lint-php.mjs",
-    "test": "npm run test:smoke && npm run test:integration",
+    "test": "npm run test:templates && npm run test:smoke && npm run test:integration",
     "assets": "node scripts/copy-icons.mjs",
     "predev": "npm run assets",
     "test:smoke": "node --test tests/login-smoke.test.mjs",
     "test:integration": "node --test tests/integration.test.mjs",
-    "test:local": "node scripts/test-xampp.mjs"
+    "test:local": "node scripts/test-xampp.mjs",
+    "check:hosting": "node scripts/check-hosting.mjs",
+    "lint:templates": "node scripts/check-template-code.mjs",
+    "test:templates": "node --test tests/template-code.test.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "playwright": "1.64.1"
   }
 }

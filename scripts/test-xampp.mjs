@@ -37,7 +37,7 @@ try {
       break;
     } catch { if (i === 99) throw new Error(logs); await delay(100); }
   }
-  const tests = spawn(process.execPath, ['--test', 'tests/login-smoke.test.mjs', 'tests/integration.test.mjs'], {
+  const tests = spawn(process.execPath, ['--test', 'tests/template-code.test.mjs', 'tests/login-smoke.test.mjs', 'tests/integration.test.mjs'], {
     windowsHide: true, stdio: 'inherit', env: { ...process.env, TEST_DB_PORT: String(port), TEST_DB_USER: 'root', TEST_DB_PASSWORD: '',
       PHP_BINARY: process.env.PHP_BINARY || 'C:/xampp/php/php.exe' },
   });

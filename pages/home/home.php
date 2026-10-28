@@ -182,7 +182,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
       </div>
       <a
         href="/project-in-beweging/pages/activiteit/activiteit.php"
-        class="home-action inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
+        class="home-action inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-ink shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
       >
         Activiteiten
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -204,7 +204,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
       </span>
       <span class="flex min-w-0 flex-col gap-0.5">
         <strong id="alert-title" class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
-        <span class="text-[13px] leading-snug text-[#5c616a]">Tijd om op te staan en een snelle 2 min stretch te
+        <span class="text-[13px] leading-snug text-card-foreground">Tijd om op te staan en een snelle 2 min stretch te
           doen.</span>
       </span>
       <button type="button" id="btn-dismiss-alert"
@@ -332,7 +332,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-extrabold text-orange">Direct de volgende opdracht starten?</p>
-            <p class="text-[13px] leading-snug text-[#6a707a]">
+            <p class="text-[13px] leading-snug text-card-foreground">
               Je kunt vandaag nog <?= $challengeChangesRemaining ?> keer direct wisselen.
             </p>
           </div>

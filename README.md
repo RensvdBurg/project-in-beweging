@@ -105,6 +105,7 @@ Importeer in een nieuwe, vooraf geselecteerde lege database achtereenvolgens:
 
 1. `database/schema.sql`
 2. `database/challenge_completions.sql`
+3. `database/migrations/001_login_rate_limits.sql`
 
 Het users-schema is hersteld uit commit `5f163ba`; het completions-schema uit
 `7b12dbd`. De samengestelde primaire sleutel op gebruiker, opdracht en periode is
@@ -128,6 +129,8 @@ worden toegevoegd door het team.
 Met de standaard Windows-XAMPP-installatie:
 
 ```sh
+npm run build
+npx playwright install chromium
 npm run test:local
 ```
 
@@ -167,8 +170,8 @@ Getest via echte HTTP-routes met afzonderlijke sessies:
 
 De accounttests vormen één geïsoleerde lifecycle; iedere run begint met een nieuwe
 database en sessies. Eén synthetische opdracht voorkomt willekeurige selectie.
-Syntaxchecks zijn geen statische analyse; de HTTP-tests zijn geen volledige visuele
-browser-, upload- of concurrentietests. De npm-audit scant dependencies, geen PHP-code.
+Syntaxchecks zijn geen uitgebreide statische analyse. De aanvullende browser-, upload-,
+concurrentie- en migratiecontroles staan hieronder beschreven. De npm-audit scant dependencies, geen PHP-code.
 
 ### GitHub Actions en branchbeveiliging
 
@@ -200,3 +203,87 @@ Er is geen deploymentworkflow. Daarvoor ontbreken hostingdoel, staging/productio
 authenticatie, secretbeheer, migratie- en rollbackafspraken. Deploy pas na succesvolle
 CI. Behoud uploads en lever de buildassets mee. Tests, scripts en databaseschema's
 horen niet in een publiek toegankelijke productie-documentroot.
+
+## Uitgebreide CI-controles
+
+### Eenmalige database-update voor bestaande installaties
+
+Importeer **alleen** `database/migrations/001_login_rate_limits.sql` in de bestaande
+appdatabase, voordat je met deze versie inlogt. Importeer niet opnieuw schema.sql.
+De migratie voegt uitsluitend de tabel login_rate_limits toe en kan opnieuw worden
+uitgevoerd. De test verifieert behoud van bestaande accounts, wachtwoordhashes en
+instellingen wanneer de migratie tweemaal wordt toegepast. Bestaande ontwikkel- en
+productiedatabases worden door de tests nooit aangepast.
+
+Inloggen is nu begrensd op vijf pogingen per genormaliseerde loginnaam en dertig
+pogingen per IP in een vast venster van vijftien minuten. Een geldige login reset
+alleen de limiet voor de loginnaam; de IP-limiet blijft gelden. Overschrijding geeft
+HTTP 429 en Retry-After. De registratie-route heeft nog geen eigen rate limiter.
+De code vertrouwt REMOTE_ADDR; achter een proxy vraagt dit om hostingconfiguratie.
+
+### Wat de aanvullende tests controleren
+
+| Gebied | Automatische controle |
+| --- | --- |
+| Browser en responsive | Chromium op 375, 768 en 1440 px: login/registratie wisselen, toetsenbordfocus, echte login, home, navigatie en zoekfilter; geen JavaScript-exceptions of kapotte lokale assets. |
+| Toegankelijkheid | Axe WCAG 2 A/AA en 2.1 AA op login, registratie en home. Gevonden contrastproblemen worden niet onderdrukt. |
+| Uiterlijk | Horizontale overflow wordt gecontroleerd; screenshots van login, registratie en home worden opgeslagen voor beoordeling. Geen pixelvergelijking met een goedgekeurde ontwerpbaseline. |
+| Uploads | Geldige PNG, leeg bestand, PHP-inhoud vermomd als PNG en bestand boven 5 MB. Bestanden gaan naar een eigen tijdelijke uploadmap; afgewezen uploads mogen niets opslaan. |
+| Account | Profiel aanpassen, XSS-escaping, verkeerd en juist huidig wachtwoord, oude versus nieuwe login en expliciete bevestiging bij verwijderen. |
+| Isolatie | Twee accounts mogen elkaars instellingen niet lezen of wijzigen door een andere gebruikers-ID mee te sturen. |
+| Opdrachten | Twee directe wissels toegestaan, derde geweigerd. Twee onafhankelijke sessies op twee PHP-processen voltooien tegelijk dezelfde opdracht: precies eenmaal XP. |
+| Ranglijst | 1.000 synthetische accounts, sortering op XP en vaste volgorde bij gelijke XP; controle via de echte profielpagina. |
+| Beveiliging | SQL-injectiepoging bij login, opgeslagen XSS in profiel/activiteit, uploadvalidatie, CSRF, sessietoegang en databasegestuurde inloglimiet over meerdere sessies. Dit is geen volledige pentest. |
+| Prestaties | Dertig loginpagina-aanvragen met concurrency vijf: p95 onder 2 seconden. Tien ranglijstpagina-aanvragen met 1.000 accounts: elk onder 2 seconden. Dit zijn CI-regressiegrenzen, geen productiecapaciteitsmeting. |
+| Migraties | Upgrade van gevulde baseline en herhaalde uitvoering van de nieuwe migratie zonder verlies van account- of instellingenvelden. Alleen de aanwezige migratie wordt getest. |
+
+Alle controles draaien binnen de bestaande verplichte CI-job, zodat de ingestelde
+branchbeveiliging blijft werken. De job installeert Chromium automatisch. Lokaal:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run build
+npm run test:local
+```
+
+Bij een andere browsercache kan `PLAYWRIGHT_BROWSERS_PATH` op een vaste map worden
+gezet; gebruik dezelfde waarde bij installeren en testen. Tests werken met eigen
+sessies, uploads en database. Screenshots en prestatiemetingen blijven bewust staan
+in `work/reports/` en zijn op GitHub te downloaden als artifact
+`ci-browser-and-performance` (zeven dagen bewaard). Ze bevatten uitsluitend testdata.
+
+De gegenereerde screenshots ondersteunen visuele review; geautomatiseerde checks
+bewijzen niet dat iedere pagina er goed uitziet of dat schermlezers overal prettig
+werken. Handmatige toegankelijkheidstests en extra browsers blijven nuttig.
+
+### Hostingcontrole voor later
+
+Er is nog geen hosting. `.github/workflows/hosting.yml` draait daarom uitsluitend
+handmatig via workflow_dispatch en is geen verplichte CI-check. Zodra er een
+geautoriseerde stagingomgeving is: stel repositoryvariable STAGING_URL in op de
+HTTPS-basis-URL van de app, inclusief afsluitende slash en eventuele submap. Start
+vervolgens **Staging hosting check** via Actions (de workflow moet daarvoor op de
+default branch staan). Lokaal: `npm run check:hosting` met dezelfde omgevingsvariabele.
+
+De controle faalt zonder URL en controleert HTTPS met normale certificaatvalidatie,
+HTTP 200, HSTS, Secure/HttpOnly/SameSite op de sessiecookie, de publieke loginpagina,
+gemengde HTTP-assets in HTML en bereikbare CSS. Hij deployt niets, maakt geen accounts
+aan en verandert geen serverinstellingen. Deze externe controle is nog niet tegen
+een echte host uitgevoerd. TLS-configuratie buiten deze checks, proxies, backups,
+serverrechten en deployment/rollback vragen later aanvullende configuratie.
+
+### Geen inline JavaScript of CSS in PHP-templates
+
+`npm run lint:templates` blokkeert `<script>` zonder externe `src`, scriptinhoud
+naast een `src`, `<style>`, `style=`, inline eventhandlers zoals onclick/onchange,
+JavaScript-URL's en script-data-URL's. De melding noemt het bestand en regelnummer.
+Externe script- en stylesheetverwijzingen, Tailwind-klassen en data-attributen blijven
+toegestaan. Gebruik addEventListener in een .js-bestand in plaats van eventattributen.
+
+De controle draait verplicht in de bestaande CI-job; de ingestelde statuscheck hoeft
+niet gewijzigd te worden. `npm run test:templates` test de controle zelf, inclusief
+hoofdletters, meerdere regels, ongequote attributen en gecodeerde JavaScript-URL's.
+De PHP-tokenizer scheidt PHP-expressies van letterlijk HTML in templates. HTML-comments
+worden genegeerd. Dynamisch met PHP opgebouwde HTML is geen letterlijke template en
+vraagt aanvullend code-review; deze controle is geen algemene PHP-code-analyse.

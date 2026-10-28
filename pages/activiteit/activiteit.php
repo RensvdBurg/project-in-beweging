@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ) {
                 $activityError = 'Gebruik een geldige JPG-, PNG- of WebP-afbeelding.';
             } else {
-                $uploadDirectory = __DIR__ . '/../../uploads/activiteiten';
+                $uploadDirectory = getenv('ACTIVITY_UPLOAD_DIR') ?: __DIR__ . '/../../uploads/activiteiten';
                 $savedFilename = bin2hex(random_bytes(16)) . '.' . $allowedImages[$mimeType];
                 $savedImagePath = $uploadDirectory . '/' . $savedFilename;
                 $imageMoved = false;

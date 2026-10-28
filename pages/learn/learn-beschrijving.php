@@ -22,7 +22,7 @@ if ($requestedChallengeId !== false && $requestedChallengeId !== null) {
     try {
         $db = getDatabaseConnection();
         $statement = $db->prepare(
-            'SELECT id, title, description, img, kcal_burned, difficulty, xp_reward
+            'SELECT id, title, description, img, kcal_burned, difficulty, xp_reward, description_extra
              FROM challenges
              WHERE id = :id'
         );
@@ -83,7 +83,7 @@ $pageTitle = $viewedChallenge !== null
 
                     <h2 class="mb-2 text-lg font-extrabold">Over deze challenge</h2>
                     <p class="whitespace-pre-line text-sm leading-relaxed text-muted">
-                        <?= htmlspecialchars($viewedChallenge['description'], ENT_QUOTES, 'UTF-8') ?>
+                        <?= htmlspecialchars($viewedChallenge['description_extra'], ENT_QUOTES, 'UTF-8') ?>
                     </p>
                 </div>
             </article>

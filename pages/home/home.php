@@ -25,13 +25,6 @@ if (
 }
 
 
-/*
- * CSRF token voor bijvoorbeeld uitloggen.
- */
-if (empty($_SESSION['csrf_token'])) {
-  $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-$homeCsrfToken = $_SESSION['csrf_token'];
 $dailyChallengeChangeLimit = 2;
 $today = date('Y-m-d');
 $challengeUsageKey = 'manual_challenge_changes_' . (int) $_SESSION['user']['id'];
@@ -45,6 +38,7 @@ $challengeCompletionNotice = $_SESSION['challenge_completion_notice'] ?? '';
 unset($_SESSION['challenge_notice'], $_SESSION['challenge_completion_notice']);
 
 require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/../../database/activity-posts.php';
 
 $challengeIntervalSeconds = 90 * 60;
 $challengeInterval = intdiv(time(), $challengeIntervalSeconds);
@@ -121,37 +115,85 @@ try {
   $selectedChallenge = null;
   $challengeLoadError = true;
 }
+
+$activityPageSize = 5;
+$requestedActivityPage = filter_input(
+  INPUT_GET,
+  'activity_page',
+  FILTER_VALIDATE_INT,
+  ['options' => ['min_range' => 1]]
+);
+$activityPage = is_int($requestedActivityPage) ? $requestedActivityPage : 1;
+$activityPosts = [];
+$activityPageCount = 1;
+$activityFeedError = false;
+
+try {
+  $activityDb = getDatabaseConnection();
+  ensureActivityPostsTable($activityDb);
+  $activityCountStatement = $activityDb->query('SELECT COUNT(*) FROM activity_posts');
+  $activityCount = (int) $activityCountStatement->fetchColumn();
+  $activityPageCount = max(1, (int) ceil($activityCount / $activityPageSize));
+  $activityPage = min($activityPage, $activityPageCount);
+  $activityOffset = ($activityPage - 1) * $activityPageSize;
+
+  $activityStatement = $activityDb->prepare(
+    'SELECT activity_posts.title, activity_posts.description,
+            activity_posts.image_filename, activity_posts.created_at,
+            COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name
+     FROM activity_posts
+     LEFT JOIN users ON users.id = activity_posts.user_id
+     ORDER BY activity_posts.created_at DESC, activity_posts.id DESC
+     LIMIT :limit OFFSET :offset'
+  );
+  $activityStatement->bindValue(':limit', $activityPageSize, PDO::PARAM_INT);
+  $activityStatement->bindValue(':offset', $activityOffset, PDO::PARAM_INT);
+  $activityStatement->execute();
+  $activityPosts = $activityStatement->fetchAll();
+} catch (Throwable $exception) {
+  error_log('Activiteitenfeed/databasefout: ' . $exception->getMessage());
+  $activityFeedError = true;
+}
+
+$escapeActivityFeed = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+$challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opdracht voltooid!');
 ?>
 <div
   class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"
-  id="screen-home">
+  id="screen-home"
+  data-user-id="<?= (int) $_SESSION['user']['id'] ?>"
+  data-challenge-id="<?= $selectedChallenge === null ? '' : (int) $selectedChallenge['id'] ?>"
+  data-challenge-interval="<?= $selectedChallenge === null ? '' : $challengeInterval ?>"
+  data-challenge-change-at="<?= $selectedChallenge === null ? '' : $challengeChangeAt * 1000 ?>"
+  data-challenge-title="<?= $selectedChallenge === null ? '' : htmlspecialchars($selectedChallenge['title'], ENT_QUOTES, 'UTF-8') ?>">
 
   <main class="flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
 
-<head>
-  <title>Home | UpMove</title>
-</head>
 <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
-    <header class="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-5">
+    <header class="home-motion mb-4 flex items-start justify-between gap-3 sm:mb-5">
       <div class="min-w-0">
         <p class="mb-0.5 text-sm font-medium text-muted">Welkom terug</p>
         <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
-          Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?> 👋
+          Hé, <?= htmlspecialchars($_SESSION['user']['full_name'], ENT_QUOTES, 'UTF-8') ?>
         </h1>
         <p class="text-sm font-bold text-orange">Totaal: <?= (int) ($_SESSION['user']['xp'] ?? 0) ?> XP</p>
       </div>
-      <form method="post" class="mb-4 flex justify-end">
-        <input type="hidden" name="action" value="logout">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
-        <button type="submit"
-          class="rounded-full px-3 py-2 text-xs font-bold text-white hover:bg-[#e02e06] bg-[#ff6b4a] cursor-pointer">Uitloggen</button>
-      </form>
+      <a
+        href="/project-in-beweging/pages/activiteit/activiteit.php"
+        class="home-action inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
+      >
+        Activiteiten
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </a>
     </header>
 
     <div id="alert-card"
-      class="alert-card mb-4 flex w-full items-center gap-3 rounded-[18px] border-[1.5px] border-alert-border bg-alert-bg p-3.5 text-left sm:p-4"
+      class="alert-card home-motion mb-4 flex w-full items-center gap-3 rounded-[18px] border-[1.5px] border-alert-border bg-alert-bg p-3.5 text-left sm:p-4"
       role="alert">
       <span class="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-alert-icon" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -161,12 +203,12 @@ try {
         </svg>
       </span>
       <span class="flex min-w-0 flex-col gap-0.5">
-        <strong class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
+        <strong id="alert-title" class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
         <span class="text-[13px] leading-snug text-[#5c616a]">Tijd om op te staan en een snelle 2 min stretch te
           doen.</span>
       </span>
       <button type="button" id="btn-dismiss-alert"
-        class="cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-teal transition hover:bg-teal-soft active:scale-95"
+        class="home-action cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-teal transition hover:bg-teal-soft active:scale-95"
         aria-label="Melding sluiten voor 60 minuten" title="Sluiten voor 60 minuten">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
@@ -178,7 +220,7 @@ try {
 
 
 
-    <section class="mb-3.5 rounded-[22px] bg-surface p-5 shadow-card sm:p-7 sm:pb-5" aria-label="Dagelijkse voortgang">
+    <section class="home-motion home-card-interactive mb-3.5 rounded-[22px] bg-surface p-5 shadow-card sm:p-7 sm:pb-5" aria-label="Dagelijkse voortgang">
 
 
       <div class="relative mx-auto mb-5 h-[190px] w-[190px] sm:mb-6 sm:h-[210px] sm:w-[210px]">
@@ -229,15 +271,31 @@ try {
       <?php if ($selectedChallenge !== null && !$challengeLoadError): ?>
         <form method="post" class="space-y-3">
           <input type="hidden" name="action" value="complete_challenge">
-          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
           <button type="submit"
-            class="w-full rounded-xl bg-teal px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            class="home-action w-full rounded-xl bg-teal px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 <?= $challengeCompletionSucceeded ? 'completion-button--success' : '' ?>"
             <?= $challengeCompleted ? 'disabled' : '' ?>>
-            Voltooid
+            <span class="inline-flex items-center justify-center gap-2">
+              <?php if ($challengeCompletionSucceeded): ?>
+                <svg class="completion-button-check" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Lekker bezig!
+              <?php else: ?>
+                Voltooid
+              <?php endif; ?>
+            </span>
           </button>
           <?php if ($challengeCompletionNotice !== ''): ?>
-            <p class="rounded-xl bg-white/70 px-3 py-2 text-sm font-semibold text-ink" role="status">
-              <?= htmlspecialchars($challengeCompletionNotice, ENT_QUOTES, 'UTF-8') ?>
+            <p class="completion-feedback rounded-xl bg-white/70 px-3 py-2 text-sm font-semibold text-ink <?= $challengeCompletionSucceeded ? 'completion-feedback--success flex items-center gap-2' : '' ?>" role="status">
+              <?php if ($challengeCompletionSucceeded): ?>
+                <span class="completion-check" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+              <?php endif; ?>
+              <span><?= htmlspecialchars($challengeCompletionNotice, ENT_QUOTES, 'UTF-8') ?></span>
             </p>
           <?php endif; ?>
         </form>
@@ -246,7 +304,7 @@ try {
     </section>
 
 
-    <section class="mb-5 flex items-center gap-3 rounded-[18px] border-2 border-teal bg-surface p-3 sm:p-3.5">
+    <section class="home-motion home-card-interactive mb-5 flex items-center gap-3 rounded-[18px] border-2 border-teal bg-surface p-3 sm:p-3.5">
 
       <div class="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-teal-soft" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -266,11 +324,11 @@ try {
     </section>
 
 
-    <section>
+    <section class="home-motion">
       <h2 class="mb-3 text-lg font-extrabold tracking-tight">Klaar voor de volgende opdracht?</h2>
       <form method="post" class="rounded-[20px] bg-orange-soft p-4 sm:p-[18px]">
         <input type="hidden" name="action" value="next_challenge">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($homeCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-extrabold text-orange">Direct de volgende opdracht starten?</p>
@@ -280,7 +338,7 @@ try {
           </div>
 
           <button type="submit" id="btn-play"
-            class="cursor-pointer btn-play grid h-14 w-14 shrink-0 place-items-center rounded-full bg-orange shadow-[0_8px_18px_rgba(255,107,74,0.35)] transition hover:shadow-[0_10px_22px_rgba(255,107,74,0.45)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            class="home-action cursor-pointer btn-play grid h-14 w-14 shrink-0 place-items-center rounded-full bg-orange shadow-[0_8px_18px_rgba(255,107,74,0.35)] transition hover:shadow-[0_10px_22px_rgba(255,107,74,0.45)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Laad een andere opdracht" <?= $challengeChangesRemaining === 0 ? 'disabled' : '' ?>>
             <svg class="ml-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M8 5.5v13l11-6.5L8 5.5z" fill="#fff" />
@@ -293,66 +351,79 @@ try {
           </p>
         <?php endif; ?>
       </form>
+      
+    </section>
+
+    <section class="home-motion mt-6" id="activity-feed" aria-labelledby="activity-feed-title">
+      <header class="mb-3">
+        <p class="mb-1 text-sm font-bold text-orange">Samen in beweging</p>
+        <h2 id="activity-feed-title" class="text-xl font-extrabold tracking-tight">Activiteiten van iedereen</h2>
+        <p class="mt-1 text-sm text-muted">Bekijk wat de UpMove-community allemaal heeft gedaan.</p>
+      </header>
+
+      <?php if ($activityFeedError): ?>
+        <p class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card" role="alert">
+          De activiteiten konden niet worden geladen. Probeer het later opnieuw.
+        </p>
+      <?php elseif ($activityPosts === []): ?>
+        <p class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card">
+          Er zijn nog geen activiteiten gedeeld. Wees de eerste!
+        </p>
+      <?php else: ?>
+        <ul class="space-y-4">
+          <?php foreach ($activityPosts as $activityPost): ?>
+            <li>
+              <article class="home-card-interactive overflow-hidden rounded-[20px] bg-surface shadow-card">
+                <img
+                  src="/project-in-beweging/uploads/activiteiten/<?= rawurlencode($activityPost['image_filename']) ?>"
+                  alt="<?= $escapeActivityFeed($activityPost['title']) ?>"
+                  class="h-48 w-full object-cover"
+                  loading="lazy">
+                <div class="p-4">
+                  <p class="text-xs font-bold text-orange">
+                    <?= $escapeActivityFeed($activityPost['author_name']) ?>
+                  </p>
+                  <h3 class="mt-1 text-base font-extrabold tracking-tight">
+                    <?= $escapeActivityFeed($activityPost['title']) ?>
+                  </h3>
+                  <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">
+                    <?= $escapeActivityFeed($activityPost['description']) ?>
+                  </p>
+                  <time
+                    class="mt-3 block text-xs font-medium text-muted"
+                    datetime="<?= $escapeActivityFeed(date(DATE_ATOM, strtotime($activityPost['created_at']))) ?>">
+                    <?= $escapeActivityFeed(date('d-m-Y H:i', strtotime($activityPost['created_at']))) ?>
+                  </time>
+                </div>
+              </article>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+
+        <?php if ($activityPageCount > 1): ?>
+          <nav class="mt-5 flex flex-wrap justify-center gap-2" aria-label="Pagina's met activiteiten">
+            <?php for ($page = 1; $page <= $activityPageCount; $page++): ?>
+              <a
+                href="/project-in-beweging/?screen=home&amp;activity_page=<?= $page ?>#activity-feed"
+                class="activity-feed-page-link grid h-10 min-w-10 place-items-center rounded-full px-3 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange <?= $page === $activityPage ? 'bg-orange text-white' : 'bg-surface text-ink shadow-card hover:bg-orange-soft' ?>"
+                <?= $page === $activityPage ? 'aria-current="page"' : '' ?>>
+                <?= $page ?>
+              </a>
+            <?php endfor; ?>
+          </nav>
+        <?php endif; ?>
+      <?php endif; ?>
     </section>
 
     <?php if ($selectedChallenge !== null): ?>
-      <script>
-        (() => {
-          const countdown = document.getElementById('next-break');
-          const challengeChangesAt = <?= $challengeChangeAt * 1000 ?>;
-          let countdownInterval;
-
-          const updateCountdown = () => {
-            const secondsRemaining = Math.max(0, Math.ceil((challengeChangesAt - Date.now()) / 1000));
-            const minutes = Math.floor(secondsRemaining / 60);
-            const seconds = String(secondsRemaining % 60).padStart(2, '0');
-            countdown.textContent = `${minutes}m ${seconds}s`;
-
-            if (secondsRemaining === 0) {
-              window.clearInterval(countdownInterval);
-              window.location.reload();
-            }
-          };
-
-          updateCountdown();
-          countdownInterval = window.setInterval(updateCountdown, 1000);
-        })();
-      </script>
+      <script
+        src="/project-in-beweging/assets/js/task-notifications.js?v=<?= filemtime(__DIR__ . '/../../assets/js/task-notifications.js') ?>"
+        defer></script>
     <?php endif; ?>
   </main>
 
 </div>
 
-<script>
-  (() => {
-    const alertCard = document.getElementById('alert-card');
-    const dismissButton = document.getElementById('btn-dismiss-alert');
-    const storageKey = 'project-in-beweging:alert-dismissed-until:<?= (int) $_SESSION['user']['id'] ?>';
-    const duration = 60 * 60 * 1000; // 1 uur in milliseconden
-    let timer;
-
-    const showAlert = () => {
-      alertCard.classList.remove('hidden');
-      localStorage.removeItem(storageKey);
-    };
-
-    const scheduleAlert = (showAt) => {
-      alertCard.classList.add('hidden');
-      timer = window.setTimeout(showAlert, Math.max(0, showAt - Date.now()));
-    };
-
-    const dismissedUntil = Number(localStorage.getItem(storageKey));
-    if (Number.isFinite(dismissedUntil) && dismissedUntil > Date.now()) {
-      scheduleAlert(dismissedUntil);
-    } else {
-      localStorage.removeItem(storageKey);
-    }
-
-    dismissButton.addEventListener('click', () => {
-      window.clearTimeout(timer);
-      const showAt = Date.now() + duration;
-      localStorage.setItem(storageKey, String(showAt));
-      scheduleAlert(showAt);
-    });
-  })();
-</script>
+<script
+  src="/project-in-beweging/assets/js/home-page.js?v=<?= filemtime(__DIR__ . '/../../assets/js/home-page.js') ?>"
+  defer></script>

@@ -3,15 +3,21 @@ require __DIR__ . '/pages/auth.php';
 
 $isLoggedIn = $currentUser !== null;
 $requestedScreen = $_GET['screen'] ?? 'home';
+$requestedTransition = $_GET['transition'] ?? null;
 $enableLearnPageTransitions = $isLoggedIn
     && is_string($requestedScreen)
     && $requestedScreen === 'leren';
 $isReturningToLearnPage = $enableLearnPageTransitions
-    && is_string($_GET['transition'] ?? null)
-    && $_GET['transition'] === 'back';
+    && $requestedTransition === 'back';
+$enableSettingsPageTransitions = $isLoggedIn;
+$isReturningToSettingsPage = $isLoggedIn
+    && $requestedTransition === 'settings-back';
+$pageTransitionClass = $isReturningToSettingsPage
+    ? 'settings-page-transition-back'
+    : ($isReturningToLearnPage ? 'learn-page-transition-back' : '');
 ?>
 <!doctype html>
-<html lang="nl"<?= $isReturningToLearnPage ? ' class="learn-page-transition-back"' : '' ?>>
+<html lang="nl"<?= $pageTransitionClass !== '' ? ' class="' . $pageTransitionClass . '"' : '' ?>>
 <head>
     <?php require __DIR__ . '/components/header.php'; ?>
 </head>

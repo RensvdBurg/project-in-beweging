@@ -1,0 +1,56 @@
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-group(root) {
+  animation-duration: 480ms;
+  animation-timing-function: cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+html.settings-page-transition::view-transition-old(root) {
+  animation: settings-page-slide-out 480ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+html.settings-page-transition::view-transition-new(root) {
+  animation: settings-page-slide-in 480ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+html.settings-page-transition-back::view-transition-old(root) {
+  animation: settings-page-slide-back-out 480ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+html.settings-page-transition-back::view-transition-new(root) {
+  animation: settings-page-slide-back-in 480ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@keyframes settings-page-slide-out {
+  to {
+    transform: translateX(-24%);
+  }
+}
+
+@keyframes settings-page-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes settings-page-slide-back-out {
+  to {
+    transform: translateX(24%);
+  }
+}
+
+@keyframes settings-page-slide-back-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+  }
+}

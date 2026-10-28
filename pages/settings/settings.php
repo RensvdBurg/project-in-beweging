@@ -31,10 +31,12 @@ $userId = $_SESSION['user']['id']
     ?? $_SESSION['user']['email']
     ?? $_SESSION['user']['full_name']
     ?? 'user';
+$enableSettingsPageTransitions = true;
+$isReturningToSettingsPage = ($_GET['transition'] ?? null) === 'back';
 
 ?>
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="nl" class="<?= $isReturningToSettingsPage ? 'settings-page-transition-back' : 'settings-page-transition' ?>">
 
 <head>
 
@@ -51,6 +53,10 @@ $userId = $_SESSION['user']['id']
     <link
         rel="stylesheet"
         href="/project-in-beweging/css/output.css?v=<?= filemtime(__DIR__ . '/../../css/output.css') ?>">
+    <?php $settingsTransitionCss = __DIR__ . '/../../assets/css/settings-page-transition.css'; ?>
+    <link
+        rel="stylesheet"
+        href="/project-in-beweging/assets/css/settings-page-transition.css?v=<?= filemtime($settingsTransitionCss) ?>">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -58,14 +64,18 @@ $userId = $_SESSION['user']['id']
         href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
         rel="stylesheet">
 
-    <script>
-        window.upmoveInitialSettings = <?= json_encode([
-            'userId' => (int) $_SESSION['user']['id'],
-            'csrfToken' => $_SESSION['csrf_token'],
-            'settings' => $userSettingsData['settings'],
-            'exists' => $userSettingsData['exists'],
-        ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR) ?>;
-    </script>
+    <meta
+        name="upmove-initial-settings"
+        content="<?= htmlspecialchars(
+            json_encode([
+                'userId' => (int) $_SESSION['user']['id'],
+                'csrfToken' => $_SESSION['csrf_token'],
+                'settings' => $userSettingsData['settings'],
+                'exists' => $userSettingsData['exists'],
+            ], JSON_THROW_ON_ERROR),
+            ENT_QUOTES,
+            'UTF-8'
+        ) ?>">
     <script
         src="/project-in-beweging/assets/js/app-settings.js?v=<?= filemtime(__DIR__ . '/../../assets/js/app-settings.js') ?>"></script>
 
@@ -75,7 +85,7 @@ $userId = $_SESSION['user']['id']
 <body class="min-h-dvh bg-[#f7f8fa] text-[#20242a] antialiased">
 
 
-    <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
+    <div class="settings-page-shell mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
         <!-- ========================================= -->
@@ -459,7 +469,7 @@ $userId = $_SESSION['user']['id']
                         </div>
 
 
-                        <div class="relative shrink-0">
+                        <div class="settings-theme-switch relative shrink-0">
 
                             <input id="setting-dark" type="checkbox" class="peer sr-only">
 
@@ -468,7 +478,7 @@ $userId = $_SESSION['user']['id']
                             </div>
 
                             <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
+                                class="settings-theme-knob absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
                             </div>
 
                         </div>

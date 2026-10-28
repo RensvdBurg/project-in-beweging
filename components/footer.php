@@ -50,7 +50,7 @@ function footerItemClass(bool $active): string
   <div class="mx-auto grid max-w-lg grid-cols-5 px-1.5 py-2">
 
     <!-- HOME -->
-    <a href="/project-in-beweging/?screen=home<?= $isSettingsPage ? '&amp;transition=settings-back' : '' ?>"
+    <a href="/project-in-beweging/?screen=home"
       class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'home') ?>" data-screen="home">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-10.5z" stroke="currentColor"

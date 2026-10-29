@@ -282,6 +282,12 @@ try {
 
     $identifier = trim($postString('email'));
     $password = $postString('password');
+    require_once __DIR__ . '/../database/login-rate-limit.php';
+    if (!allowLoginAttempt($db, $identifier, $_SERVER['REMOTE_ADDR'] ?? 'unknown')) {
+        http_response_code(429);
+        header('Retry-After: ' . (900 - time() % 900));
+        exit('Te veel inlogpogingen. Probeer het over 15 minuten opnieuw.');
+    }
     $statement = $db->prepare(
         'SELECT id, username, full_name, password_hash, xp
          FROM users
@@ -297,6 +303,9 @@ try {
     if (!$user || !password_verify($password, $user['password_hash'])) {
         $redirectWithMessage('E-mailadres/gebruikersnaam of wachtwoord is onjuist.');
     }
+
+    $clearAttempts = $db->prepare('DELETE FROM login_rate_limits WHERE bucket_key = :key');
+    $clearAttempts->execute(['key' => hash('sha256', 'account:' . strtolower($identifier))]);
 
     session_regenerate_id(true);
     $_SESSION['user'] = [
@@ -317,6 +326,15 @@ try {
 
     if ($mode === 'register' && (int) ($exception->errorInfo[1] ?? 0) === 1062) {
         $redirectWithMessage('Dit e-mailadres of deze gebruikersnaam is al in gebruik.');
+    }
+
+    if (
+        $mode === 'login' &&
+        (int) ($exception->errorInfo[1] ?? 0) === 1146 &&
+        str_contains($exception->getMessage(), 'login_rate_limits')
+    ) {
+        error_log('Authenticatie/databasefout: tabel login_rate_limits ontbreekt; voer de bijbehorende migratie uit.');
+        $redirectWithMessage('De database is nog niet bijgewerkt. Importeer database/migrations/001_login_rate_limits.sql en probeer het opnieuw.');
     }
 
     error_log('Authenticatie/databasefout: ' . $exception->getMessage());

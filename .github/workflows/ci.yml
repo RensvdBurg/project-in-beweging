@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, test, release, main]
+  pull_request:
+    branches: [develop, test, release, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: PHP syntax, CSS build and login smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      database:
+        image: mariadb:10.4.32
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql, mbstring
+          coverage: none
+          tools: none
+        env:
+          fail-fast: true
+      - run: npm ci --no-audit
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: PHP syntax
+        run: npm run lint:php
+      - name: Reject inline JavaScript and CSS in PHP templates
+        run: npm run lint:templates && npm run test:templates
+      - name: Build CSS and verify output
+        run: npm run build && npm run check:build
+      - name: HTTP smoke and database integration tests
+        run: npm test
+        env:
+          TEST_DB_PORT: ${{ job.services.database.ports['3306'] }}
+          TEST_DB_USER: root
+
+      - name: Save browser screenshots and performance reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-browser-and-performance
+          path: work/reports/
+          retention-days: 7
+
+  security:
+    name: npm security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm audit --audit-level=high

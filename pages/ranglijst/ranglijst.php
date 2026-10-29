@@ -104,7 +104,11 @@ $getAvatarInitials = static function (string $fullName): string {
             <?php foreach ([1 => 2, 0 => 1, 2 => 3] as $podiumIndex => $rank): ?>
                 <?php if (isset($rankings[$podiumIndex])): ?>
                     <?php $podiumUser = $rankings[$podiumIndex]; ?>
-                    <article class="leaderboard-podium-card leaderboard-podium-card--<?= $rank ?>">
+                    <a
+                        href="/project-in-beweging/pages/ranglijst/profile.php?id=<?= (int) $podiumUser['id'] ?>"
+                        class="leaderboard-podium-card leaderboard-podium-card--<?= $rank ?>"
+                        data-reveal-rank="<?= $rank ?>"
+                        aria-label="Bekijk het profiel van <?= htmlspecialchars($podiumUser['full_name'], ENT_QUOTES, 'UTF-8') ?>">
                         <span class="leaderboard-podium-rank" aria-label="Positie <?= $rank ?>">#<?= $rank ?></span>
                         <span class="leaderboard-podium-avatar" aria-hidden="true">
                             <?= htmlspecialchars($getAvatarInitials($podiumUser['full_name']), ENT_QUOTES, 'UTF-8') ?>
@@ -118,7 +122,7 @@ $getAvatarInitials = static function (string $fullName): string {
                         <span class="leaderboard-xp">
                             <?= (int) $podiumUser['xp'] ?> XP
                         </span>
-                    </article>
+                    </a>
                 <?php endif; ?>
             <?php endforeach; ?>
         </section>
@@ -133,7 +137,11 @@ $getAvatarInitials = static function (string $fullName): string {
                         $rank = $index + 4;
                         $isCurrentUser = (int) $rankedUser['id'] === (int) $_SESSION['user']['id'];
                         ?>
-                        <li class="flex items-center gap-3 rounded-2xl px-3 py-3 <?= $isCurrentUser ? 'bg-orange-soft' : 'bg-app-bg/60' ?>">
+                        <li data-reveal-rank="<?= $rank ?>">
+                            <a
+                                href="/project-in-beweging/pages/ranglijst/profile.php?id=<?= (int) $rankedUser['id'] ?>"
+                                class="leaderboard-user-link flex items-center gap-3 rounded-2xl px-3 py-3 <?= $isCurrentUser ? 'bg-orange-soft' : 'bg-app-bg/60' ?>"
+                                aria-label="Bekijk het profiel van <?= htmlspecialchars($rankedUser['full_name'], ENT_QUOTES, 'UTF-8') ?>">
                             <span class="leaderboard-rank" role="img" aria-label="Positie <?= $rank ?>">
                                 <?= $rank ?>
                             </span>
@@ -152,6 +160,7 @@ $getAvatarInitials = static function (string $fullName): string {
                             <span class="leaderboard-xp shrink-0">
                                 <?= (int) $rankedUser['xp'] ?> XP
                             </span>
+                            </a>
                         </li>
                     <?php endforeach; ?>
                 </ol>
@@ -166,7 +175,7 @@ $getAvatarInitials = static function (string $fullName): string {
             && $currentUserRank !== null
             && $currentUserRank > count($rankings)
         ): ?>
-            <section class="leaderboard-your-rank" aria-label="Jouw positie">
+            <section class="leaderboard-your-rank" aria-label="Jouw positie" data-reveal-rank="0">
                 <div class="min-w-0 flex-1">
                     <p class="text-xs font-bold uppercase tracking-wide text-orange">Jouw positie</p>
                     <p class="truncate text-base font-extrabold">

@@ -7,7 +7,13 @@
     workEnd: "17:00",
     workDays: [1, 2, 3, 4, 5],
   };
-  const initial = window.upmoveInitialSettings || {};
+  const initialSettingsElement = document.querySelector(
+    'meta[name="upmove-initial-settings"]',
+  );
+  const initial = initialSettingsElement
+    ? JSON.parse(initialSettingsElement.content)
+    : {};
+  window.upmoveInitialSettings = initial;
   let settings = { ...defaults, ...(initial.settings || {}) };
 
   function applySettings(updatedSettings) {

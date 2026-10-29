@@ -2,7 +2,8 @@
 
 @source "../*.php";
 @source "../pages";
-@source inline("my-4 mt-3 table h-[210px] w-[210px] flex-shrink border-collapse resize bg-[#ff6b4a] bg-white/70 object-cover text-ink underline filter backdrop-filter hover:bg-[#e02e06] hover:bg-teal-soft disabled:opacity-50 disabled:opacity-60");
+@source "../components";
+@source inline("my-4 mt-3 table h-[210px] w-[210px] flex-shrink border-collapse resize bg-[#ff6b4a] bg-white/70 object-cover text-ink text-orange-streak underline filter backdrop-filter hover:bg-[#e02e06] hover:bg-teal-soft disabled:opacity-50 disabled:opacity-60 left-1 mt-0 mb-0 ml-0 -translate-x-1 transform gap-0 overflow-x-clip px-0 px-1 outline ease-out");
 
 @theme {
   /* Lettertype van de hele app */
@@ -89,6 +90,7 @@ html.upmove-dark {
 
   --color-background: #151920;
   --color-app-bg: #151920;
+  --color-ink: #f4f5f7;
 
   --color-surface: #202630;
   --color-card: #202630;
@@ -113,6 +115,27 @@ html.upmove-dark body {
 }
 
 html.upmove-dark .activity-feed-page-link {
+  color: #ffffff;
+}
+
+html.upmove-dark .activity-interaction-icon {
+  color: #ffffff;
+}
+
+.activity-interaction-icon {
+  color: #000000;
+}
+
+.activity-interaction-count {
+  color: #000000;
+}
+
+html.upmove-dark .activity-interaction-count {
+  color: #ffffff;
+}
+
+html.upmove-dark #screen-home .activity-nav-button {
+  background-color: #a33b26;
   color: #ffffff;
 }
 
@@ -538,4 +561,487 @@ html.upmove-dark .account-dialog .account-dialog-cancel:hover {
 
 html.upmove-dark .upmove-settings a.settings-card:hover {
   background-color: #2a313c;
+}
+
+@keyframes home-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes alert-dismiss {
+  to {
+    opacity: 0;
+    transform: translateX(24px) scale(0.96);
+  }
+}
+
+@keyframes completion-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.94);
+  }
+
+  65% {
+    transform: translateY(-2px) scale(1.02);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes completion-button-pop {
+  0% {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 0 rgb(46 196 182 / 35%);
+  }
+
+  55% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 8px rgb(46 196 182 / 0%);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 4px 14px rgb(46 196 182 / 22%);
+  }
+}
+
+@keyframes completion-sparkle {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.5) rotate(-20deg);
+  }
+
+  45% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.15) rotate(16deg);
+  }
+}
+
+#screen-home .home-motion {
+  animation: home-rise-in 520ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-home main > div > header.home-motion {
+  animation-delay: 30ms;
+}
+
+#screen-home #alert-card {
+  animation-delay: 90ms;
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+#screen-home #alert-card.alert-card--appearing {
+  animation: home-rise-in 380ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-home #alert-card.alert-card--dismissing {
+  animation: alert-dismiss 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+
+#screen-home main > div > section:nth-of-type(1) {
+  animation-delay: 150ms;
+}
+
+#screen-home main > div > section:nth-of-type(2) {
+  animation-delay: 210ms;
+}
+
+#screen-home main > div > section:nth-of-type(3) {
+  animation-delay: 270ms;
+}
+
+#screen-home #activity-feed {
+  animation-delay: 330ms;
+}
+
+#screen-home .home-card-interactive,
+#screen-home .home-action {
+  transition: transform 200ms ease, box-shadow 200ms ease, filter 200ms ease;
+}
+
+#screen-home .home-card-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgb(20 24 40 / 10%);
+}
+
+#screen-home .home-action:hover:not(:disabled) {
+  transform: translateY(-2px);
+  filter: brightness(1.03);
+}
+
+#screen-home .home-action:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+#screen-home .completion-feedback {
+  position: relative;
+  overflow: hidden;
+}
+
+#screen-home .completion-button--success {
+  background-color: #2ec4b6;
+  box-shadow: 0 4px 14px rgb(46 196 182 / 22%);
+  opacity: 1;
+  animation: completion-button-pop 520ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-home .completion-button-check {
+  animation: completion-pop 420ms 120ms both;
+}
+
+#screen-home .completion-feedback--success {
+  border: 1px solid rgb(46 196 182 / 35%);
+  background: linear-gradient(110deg, #e8faf7, #ffffff 78%);
+  animation: completion-pop 560ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-home .completion-feedback--success::before,
+#screen-home .completion-feedback--success::after {
+  position: absolute;
+  color: #ff9a45;
+  content: "✦";
+  pointer-events: none;
+  animation: completion-sparkle 800ms ease-out both;
+}
+
+#screen-home .completion-feedback--success::before {
+  top: 0.5rem;
+  right: 0.9rem;
+  font-size: 1rem;
+}
+
+#screen-home .completion-feedback--success::after {
+  top: 1.25rem;
+  right: 2rem;
+  color: #2ec4b6;
+  font-size: 0.75rem;
+  animation-delay: 100ms;
+}
+
+#screen-home .completion-feedback--success .completion-check {
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: #2ec4b6;
+  color: white;
+}
+
+#screen-home .completion-feedback--success .completion-check svg {
+  animation: completion-pop 420ms 120ms both;
+}
+
+html.upmove-dark #screen-home .completion-feedback--success {
+  background: linear-gradient(110deg, #203a37, #202630 78%);
+  color: #ffffff;
+}
+
+@keyframes leaderboard-rise-in {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+    scale: 0.98;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+#screen-ranglijst:not(.hidden) > header,
+#screen-ranglijst:not(.hidden) > section[aria-labelledby="rankingTitle"] {
+  animation: leaderboard-rise-in 480ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-ranglijst:not(.hidden) > section[aria-labelledby="rankingTitle"] {
+  animation-delay: 90ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank] {
+  animation: leaderboard-rise-in 480ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="10"] {
+  animation-delay: 0ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="9"] {
+  animation-delay: 90ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="8"] {
+  animation-delay: 180ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="7"] {
+  animation-delay: 270ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="6"] {
+  animation-delay: 360ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="5"] {
+  animation-delay: 450ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="4"] {
+  animation-delay: 540ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="3"] {
+  animation-delay: 630ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="2"] {
+  animation-delay: 720ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="1"] {
+  animation-delay: 810ms;
+}
+
+#screen-ranglijst:not(.hidden) [data-reveal-rank="0"] {
+  animation-delay: 900ms;
+}
+
+#screen-ranglijst .leaderboard-podium-card,
+#screen-ranglijst ol > li {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+
+#screen-ranglijst .leaderboard-podium-card,
+#screen-ranglijst .leaderboard-user-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+#screen-ranglijst .leaderboard-podium-card:focus-visible,
+#screen-ranglijst .leaderboard-user-link:focus-visible {
+  outline: 2px solid #ff6b4a;
+  outline-offset: 3px;
+}
+
+#screen-ranglijst .leaderboard-podium-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 32px rgb(20 24 40 / 12%);
+}
+
+#screen-ranglijst ol > li:hover {
+  transform: translateX(4px);
+  box-shadow: 0 8px 20px rgb(20 24 40 / 9%);
+}
+
+@keyframes learn-card-enter {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+#screen-leren:not(.hidden) > header {
+  animation: learn-card-enter 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li {
+  animation: learn-card-enter 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(5) {
+  animation-delay: 240ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(6) {
+  animation-delay: 300ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(7) {
+  animation-delay: 360ms;
+}
+
+#screen-leren:not(.hidden) #challenge-list > li:nth-child(8) {
+  animation-delay: 420ms;
+}
+
+#screen-leren #challenge-list > li > a img {
+  transition: scale 220ms ease;
+}
+
+#screen-leren #challenge-list > li > a:hover img {
+  scale: 1.04;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #screen-home .home-motion,
+  #screen-home #alert-card.alert-card--dismissing,
+  #screen-home .completion-button--success,
+  #screen-home .completion-button-check,
+  #screen-home .completion-feedback--success,
+  #screen-home .completion-feedback--success .completion-check svg,
+  #screen-home .completion-feedback--success::before,
+  #screen-home .completion-feedback--success::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  #screen-home .home-card-interactive,
+  #screen-home .home-action,
+  #screen-home #alert-card {
+    transition-duration: 0.01ms !important;
+  }
+
+  #screen-ranglijst:not(.hidden) > header,
+  #screen-ranglijst:not(.hidden) > section[aria-labelledby="rankingTitle"],
+  #screen-ranglijst:not(.hidden) [data-reveal-rank] {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  #screen-ranglijst .leaderboard-podium-card,
+  #screen-ranglijst ol > li {
+    transition-duration: 0.01ms !important;
+  }
+
+  #screen-leren:not(.hidden) > header,
+  #screen-leren:not(.hidden) #challenge-list > li {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  #screen-leren #challenge-list > li > a img {
+    transition-duration: 0.01ms !important;
+  }
+
+}
+
+@keyframes settings-section-enter {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.upmove-settings > header,
+.upmove-account > header,
+.upmove-settings > section,
+.upmove-account > section {
+  animation: settings-section-enter 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.upmove-settings > section:nth-of-type(2),
+.upmove-account > section:nth-of-type(2) {
+  animation-delay: 60ms;
+}
+
+.upmove-settings > section:nth-of-type(3),
+.upmove-account > section:nth-of-type(3) {
+  animation-delay: 120ms;
+}
+
+.upmove-settings > section:nth-of-type(4),
+.upmove-account > section:nth-of-type(4) {
+  animation-delay: 180ms;
+}
+
+.upmove-settings a.settings-card,
+.upmove-account a.settings-card {
+  transition: translate 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.upmove-settings a.settings-card:hover,
+.upmove-account a.settings-card:hover {
+  translate: 0 -2px;
+  box-shadow: 0 10px 24px rgb(20 24 40 / 10%);
+}
+
+.upmove-account details.account-surface > summary {
+  transition: background-color 180ms ease;
+}
+
+.upmove-settings .settings-input,
+.upmove-account .account-input {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.upmove-settings .settings-input:focus,
+.upmove-account .account-input:focus {
+  box-shadow: 0 0 0 3px rgb(255 107 74 / 18%);
+}
+
+html.settings-theme-transition,
+html.settings-theme-transition *,
+html.settings-theme-transition *::before,
+html.settings-theme-transition *::after {
+  transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, box-shadow, transform;
+  transition-duration: 300ms;
+  transition-timing-function: ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upmove-settings > header,
+  .upmove-account > header,
+  .upmove-settings > section,
+  .upmove-account > section {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .upmove-settings a.settings-card,
+  .upmove-account a.settings-card,
+  .upmove-account details.account-surface > summary,
+  .upmove-settings .settings-input,
+  .upmove-account .account-input {
+    transition-duration: 0.01ms !important;
+  }
+
+  html.settings-theme-transition,
+  html.settings-theme-transition *,
+  html.settings-theme-transition *::before,
+  html.settings-theme-transition *::after {
+    transition-duration: 0.01ms !important;
+  }
 }

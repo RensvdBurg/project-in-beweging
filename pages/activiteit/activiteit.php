@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ) {
                 $activityError = 'Gebruik een geldige JPG-, PNG- of WebP-afbeelding.';
             } else {
-                $uploadDirectory = __DIR__ . '/../../uploads/activiteiten';
+                $uploadDirectory = getenv('ACTIVITY_UPLOAD_DIR') ?: __DIR__ . '/../../uploads/activiteiten';
                 $savedFilename = bin2hex(random_bytes(16)) . '.' . $allowedImages[$mimeType];
                 $savedImagePath = $uploadDirectory . '/' . $savedFilename;
                 $imageMoved = false;
@@ -154,12 +154,23 @@ try {
     $activityOffset = ($activityPage - 1) * $activityPageSize;
 
     $statement = $db->prepare(
-        'SELECT title, description, image_filename, created_at
+        'SELECT activity_posts.id, activity_posts.title, activity_posts.description,
+                activity_posts.image_filename, activity_posts.created_at,
+                (SELECT COUNT(*) FROM activity_post_likes
+                 WHERE activity_post_likes.post_id = activity_posts.id) AS like_count,
+                EXISTS (
+                    SELECT 1 FROM activity_post_likes
+                    WHERE activity_post_likes.post_id = activity_posts.id
+                      AND activity_post_likes.user_id = :current_user_id
+                ) AS liked_by_user,
+                (SELECT COUNT(*) FROM activity_post_comments
+                 WHERE activity_post_comments.post_id = activity_posts.id) AS comment_count
          FROM activity_posts
-         WHERE user_id = :user_id
-         ORDER BY created_at DESC, id DESC
+         WHERE activity_posts.user_id = :user_id
+         ORDER BY activity_posts.created_at DESC, activity_posts.id DESC
          LIMIT :limit OFFSET :offset'
     );
+    $statement->bindValue(':current_user_id', $userId, PDO::PARAM_INT);
     $statement->bindValue(':user_id', $userId, PDO::PARAM_INT);
     $statement->bindValue(':limit', $activityPageSize, PDO::PARAM_INT);
     $statement->bindValue(':offset', $activityOffset, PDO::PARAM_INT);
@@ -264,6 +275,8 @@ try {
                                     alt="<?= $escape($activity['title']) ?>"
                                     class="max-h-80 w-full object-cover"
                                     loading="lazy">
+                                <?php $activityPost = $activity; ?>
+                                <?php require __DIR__ . '/../../components/activity-interactions.php'; ?>
                                 <div class="p-4">
                                     <h3 class="text-base font-extrabold tracking-tight"><?= $escape($activity['title']) ?></h3>
                                     <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted"><?= $escape($activity['description']) ?></p>
@@ -293,5 +306,6 @@ try {
     </main>
 
     <?php require __DIR__ . '/../../components/footer.php'; ?>
+    <script src="/project-in-beweging/assets/js/activity-interactions.js?v=<?= filemtime(__DIR__ . '/../../assets/js/activity-interactions.js') ?>" defer></script>
 </body>
 </html>

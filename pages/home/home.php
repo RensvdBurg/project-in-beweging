@@ -138,14 +138,24 @@ try {
   $activityOffset = ($activityPage - 1) * $activityPageSize;
 
   $activityStatement = $activityDb->prepare(
-    'SELECT activity_posts.title, activity_posts.description,
+    'SELECT activity_posts.id, activity_posts.user_id, activity_posts.title, activity_posts.description,
             activity_posts.image_filename, activity_posts.created_at,
-            COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name
+            COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name,
+            (SELECT COUNT(*) FROM activity_post_likes
+             WHERE activity_post_likes.post_id = activity_posts.id) AS like_count,
+            EXISTS (
+              SELECT 1 FROM activity_post_likes
+              WHERE activity_post_likes.post_id = activity_posts.id
+                AND activity_post_likes.user_id = :current_user_id
+            ) AS liked_by_user,
+            (SELECT COUNT(*) FROM activity_post_comments
+             WHERE activity_post_comments.post_id = activity_posts.id) AS comment_count
      FROM activity_posts
      LEFT JOIN users ON users.id = activity_posts.user_id
      ORDER BY activity_posts.created_at DESC, activity_posts.id DESC
      LIMIT :limit OFFSET :offset'
   );
+  $activityStatement->bindValue(':current_user_id', (int) $_SESSION['user']['id'], PDO::PARAM_INT);
   $activityStatement->bindValue(':limit', $activityPageSize, PDO::PARAM_INT);
   $activityStatement->bindValue(':offset', $activityOffset, PDO::PARAM_INT);
   $activityStatement->execute();
@@ -156,6 +166,7 @@ try {
 }
 
 $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+$challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opdracht voltooid!');
 ?>
 <div
   class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"
@@ -163,17 +174,15 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
   data-user-id="<?= (int) $_SESSION['user']['id'] ?>"
   data-challenge-id="<?= $selectedChallenge === null ? '' : (int) $selectedChallenge['id'] ?>"
   data-challenge-interval="<?= $selectedChallenge === null ? '' : $challengeInterval ?>"
+  data-challenge-change-at="<?= $selectedChallenge === null ? '' : $challengeChangeAt * 1000 ?>"
   data-challenge-title="<?= $selectedChallenge === null ? '' : htmlspecialchars($selectedChallenge['title'], ENT_QUOTES, 'UTF-8') ?>">
 
   <main class="flex-1 overflow-y-auto px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
 
-<head>
-  <title>Home | UpMove</title>
-</head>
 <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
-    <header class="mb-4 flex items-start justify-between gap-3 sm:mb-5">
+    <header class="home-motion mb-4 flex items-start justify-between gap-3 sm:mb-5">
       <div class="min-w-0">
         <p class="mb-0.5 text-sm font-medium text-muted">Welkom terug</p>
         <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
@@ -183,7 +192,7 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
       </div>
       <a
         href="/project-in-beweging/pages/activiteit/activiteit.php"
-        class="inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
+        class="home-action activity-nav-button inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-ink shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
       >
         Activiteiten
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -194,7 +203,7 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
     </header>
 
     <div id="alert-card"
-      class="alert-card mb-4 flex w-full items-center gap-3 rounded-[18px] border-[1.5px] border-alert-border bg-alert-bg p-3.5 text-left sm:p-4"
+      class="alert-card home-motion mb-4 flex w-full items-center gap-3 rounded-[18px] border-[1.5px] border-alert-border bg-alert-bg p-3.5 text-left sm:p-4"
       role="alert">
       <span class="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-alert-icon" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -205,11 +214,11 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
       </span>
       <span class="flex min-w-0 flex-col gap-0.5">
         <strong id="alert-title" class="text-[15px] font-bold tracking-tight">Te lang gezeten! (60 min)</strong>
-        <span class="text-[13px] leading-snug text-[#5c616a]">Tijd om op te staan en een snelle 2 min stretch te
+        <span class="text-[13px] leading-snug text-card-foreground">Tijd om op te staan en een snelle 2 min stretch te
           doen.</span>
       </span>
       <button type="button" id="btn-dismiss-alert"
-        class="cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-teal transition hover:bg-teal-soft active:scale-95"
+        class="home-action cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full border border-black bg-white text-teal transition hover:bg-teal-soft active:scale-95"
         aria-label="Melding sluiten voor 60 minuten" title="Sluiten voor 60 minuten">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
@@ -221,7 +230,7 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
 
 
 
-    <section class="mb-3.5 rounded-[22px] bg-surface p-5 shadow-card sm:p-7 sm:pb-5" aria-label="Dagelijkse voortgang">
+    <section class="home-motion home-card-interactive mb-3.5 rounded-[22px] bg-surface p-5 shadow-card sm:p-7 sm:pb-5" aria-label="Dagelijkse voortgang">
 
 
       <div class="relative mx-auto mb-5 h-[190px] w-[190px] sm:mb-6 sm:h-[210px] sm:w-[210px]">
@@ -274,13 +283,29 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
           <input type="hidden" name="action" value="complete_challenge">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
           <button type="submit"
-            class="w-full rounded-xl bg-teal px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            class="home-action w-full rounded-xl bg-teal px-4 py-3 text-sm font-extrabold text-white transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 <?= $challengeCompletionSucceeded ? 'completion-button--success' : '' ?>"
             <?= $challengeCompleted ? 'disabled' : '' ?>>
-            Voltooid
+            <span class="inline-flex items-center justify-center gap-2">
+              <?php if ($challengeCompletionSucceeded): ?>
+                <svg class="completion-button-check" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Lekker bezig!
+              <?php else: ?>
+                Voltooid
+              <?php endif; ?>
+            </span>
           </button>
           <?php if ($challengeCompletionNotice !== ''): ?>
-            <p class="rounded-xl bg-white/70 px-3 py-2 text-sm font-semibold text-ink" role="status">
-              <?= htmlspecialchars($challengeCompletionNotice, ENT_QUOTES, 'UTF-8') ?>
+            <p class="completion-feedback rounded-xl bg-white/70 px-3 py-2 text-sm font-semibold text-ink <?= $challengeCompletionSucceeded ? 'completion-feedback--success flex items-center gap-2' : '' ?>" role="status">
+              <?php if ($challengeCompletionSucceeded): ?>
+                <span class="completion-check" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+              <?php endif; ?>
+              <span><?= htmlspecialchars($challengeCompletionNotice, ENT_QUOTES, 'UTF-8') ?></span>
             </p>
           <?php endif; ?>
         </form>
@@ -289,7 +314,7 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
     </section>
 
 
-    <section class="mb-5 flex items-center gap-3 rounded-[18px] border-2 border-teal bg-surface p-3 sm:p-3.5">
+    <section class="home-motion home-card-interactive mb-5 flex items-center gap-3 rounded-[18px] border-2 border-teal bg-surface p-3 sm:p-3.5">
 
       <div class="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-teal-soft" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -309,7 +334,7 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
     </section>
 
 
-    <section>
+    <section class="home-motion">
       <h2 class="mb-3 text-lg font-extrabold tracking-tight">Klaar voor de volgende opdracht?</h2>
       <form method="post" class="rounded-[20px] bg-orange-soft p-4 sm:p-[18px]">
         <input type="hidden" name="action" value="next_challenge">
@@ -317,13 +342,13 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
         <div class="flex items-center gap-3">
           <div class="min-w-0 flex-1">
             <p class="text-base font-extrabold text-orange">Direct de volgende opdracht starten?</p>
-            <p class="text-[13px] leading-snug text-[#6a707a]">
+            <p class="text-[13px] leading-snug text-card-foreground">
               Je kunt vandaag nog <?= $challengeChangesRemaining ?> keer direct wisselen.
             </p>
           </div>
 
           <button type="submit" id="btn-play"
-            class="cursor-pointer btn-play grid h-14 w-14 shrink-0 place-items-center rounded-full bg-orange shadow-[0_8px_18px_rgba(255,107,74,0.35)] transition hover:shadow-[0_10px_22px_rgba(255,107,74,0.45)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+            class="home-action cursor-pointer btn-play grid h-14 w-14 shrink-0 place-items-center rounded-full bg-orange shadow-[0_8px_18px_rgba(255,107,74,0.35)] transition hover:shadow-[0_10px_22px_rgba(255,107,74,0.45)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Laad een andere opdracht" <?= $challengeChangesRemaining === 0 ? 'disabled' : '' ?>>
             <svg class="ml-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M8 5.5v13l11-6.5L8 5.5z" fill="#fff" />
@@ -339,7 +364,8 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
       
     </section>
 
-    <section class="mt-6" id="activity-feed" aria-labelledby="activity-feed-title">
+    <section class="home-motion mt-6" id="activity-feed" aria-labelledby="activity-feed-title"
+      data-csrf-token="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
       <header class="mb-3">
         <p class="mb-1 text-sm font-bold text-orange">Samen in beweging</p>
         <h2 id="activity-feed-title" class="text-xl font-extrabold tracking-tight">Activiteiten van iedereen</h2>
@@ -358,16 +384,20 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
         <ul class="space-y-4">
           <?php foreach ($activityPosts as $activityPost): ?>
             <li>
-              <article class="overflow-hidden rounded-[20px] bg-surface shadow-card">
+              <article class="home-card-interactive overflow-hidden rounded-[20px] bg-surface shadow-card">
                 <img
                   src="/project-in-beweging/uploads/activiteiten/<?= rawurlencode($activityPost['image_filename']) ?>"
                   alt="<?= $escapeActivityFeed($activityPost['title']) ?>"
                   class="h-48 w-full object-cover"
                   loading="lazy">
+                <?php require __DIR__ . '/../../components/activity-interactions.php'; ?>
                 <div class="p-4">
-                  <p class="text-xs font-bold text-orange">
+                  <a
+                    href="/project-in-beweging/pages/ranglijst/profile.php?id=<?= (int) $activityPost['user_id'] ?>&amp;from=home"
+                    class="inline-block text-xs font-bold text-orange underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
+                    aria-label="Bekijk het profiel van <?= $escapeActivityFeed($activityPost['author_name']) ?>">
                     <?= $escapeActivityFeed($activityPost['author_name']) ?>
-                  </p>
+                  </a>
                   <h3 class="mt-1 text-base font-extrabold tracking-tight">
                     <?= $escapeActivityFeed($activityPost['title']) ?>
                   </h3>
@@ -401,29 +431,6 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
     </section>
 
     <?php if ($selectedChallenge !== null): ?>
-      <script>
-        (() => {
-          const countdown = document.getElementById('next-break');
-          const challengeChangesAt = <?= $challengeChangeAt * 1000 ?>;
-          let countdownInterval;
-
-          const updateCountdown = () => {
-            const secondsRemaining = Math.max(0, Math.ceil((challengeChangesAt - Date.now()) / 1000));
-            const minutes = Math.floor(secondsRemaining / 60);
-            const seconds = String(secondsRemaining % 60).padStart(2, '0');
-            countdown.textContent = `${minutes}m ${seconds}s`;
-
-            if (secondsRemaining === 0) {
-              window.clearInterval(countdownInterval);
-              window.location.reload();
-            }
-          };
-
-          updateCountdown();
-          countdownInterval = window.setInterval(updateCountdown, 1000);
-        })();
-      </script>
-
       <script
         src="/project-in-beweging/assets/js/task-notifications.js?v=<?= filemtime(__DIR__ . '/../../assets/js/task-notifications.js') ?>"
         defer></script>
@@ -432,101 +439,9 @@ $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($valu
 
 </div>
 
-<script>
-  (() => {
-    const alertCard = document.getElementById('alert-card');
-    const dismissButton = document.getElementById('btn-dismiss-alert');
-    const alertTitle = document.getElementById('alert-title');
-    const userId = '<?= (int) $_SESSION['user']['id'] ?>';
-    const dismissedUntilKey = `project-in-beweging:alert-dismissed-until:${userId}`;
-    const dismissedAtKey = `project-in-beweging:alert-dismissed-at:${userId}`;
-    const defaultFrequency = 60;
-    let frequency = getReminderFrequency();
-    let timer;
-
-    function getReminderFrequency() {
-      const savedFrequency = window.upmoveSettings
-        ? window.upmoveSettings.frequency
-        : null;
-
-      return Number.isInteger(savedFrequency) &&
-        savedFrequency >= 15 &&
-        savedFrequency <= 120 &&
-        savedFrequency % 15 === 0
-        ? savedFrequency
-        : defaultFrequency;
-    }
-
-    const updateAlertText = () => {
-      alertTitle.textContent = `Te lang gezeten! (${frequency} min)`;
-      dismissButton.setAttribute('aria-label', `Melding sluiten voor ${frequency} minuten`);
-      dismissButton.title = `Sluiten voor ${frequency} minuten`;
-    };
-
-    const getDuration = () => frequency * 60 * 1000;
-
-    const showAlert = () => {
-      alertCard.classList.remove('hidden');
-      localStorage.removeItem(dismissedUntilKey);
-      localStorage.removeItem(dismissedAtKey);
-    };
-
-    const scheduleAlert = (showAt) => {
-      window.clearTimeout(timer);
-      alertCard.classList.add('hidden');
-      timer = window.setTimeout(showAlert, Math.max(0, showAt - Date.now()));
-    };
-
-    const dismissedAt = Number(localStorage.getItem(dismissedAtKey));
-    if (Number.isFinite(dismissedAt) && dismissedAt > 0) {
-      const showAt = dismissedAt + getDuration();
-      if (showAt > Date.now()) {
-        scheduleAlert(showAt);
-      } else {
-        showAlert();
-      }
-    } else {
-      const legacyDismissedUntil = Number(localStorage.getItem(dismissedUntilKey));
-      if (Number.isFinite(legacyDismissedUntil) && legacyDismissedUntil > Date.now()) {
-        const legacyDismissedAt = legacyDismissedUntil - 60 * 60 * 1000;
-        localStorage.setItem(dismissedAtKey, String(legacyDismissedAt));
-        const showAt = legacyDismissedAt + getDuration();
-        if (showAt > Date.now()) {
-          scheduleAlert(showAt);
-        } else {
-          showAlert();
-        }
-      } else {
-        localStorage.removeItem(dismissedUntilKey);
-      }
-    }
-
-    dismissButton.addEventListener('click', () => {
-      const dismissedAt = Date.now();
-      localStorage.setItem(dismissedAtKey, String(dismissedAt));
-      localStorage.removeItem(dismissedUntilKey);
-      const showAt = dismissedAt + getDuration();
-      scheduleAlert(showAt);
-    });
-
-    const refreshFrequency = () => {
-      const updatedFrequency = getReminderFrequency();
-      if (updatedFrequency === frequency) {
-        return;
-      }
-
-      frequency = updatedFrequency;
-      updateAlertText();
-
-      const dismissedAt = Number(localStorage.getItem(dismissedAtKey));
-      if (Number.isFinite(dismissedAt) && dismissedAt > 0) {
-        scheduleAlert(dismissedAt + getDuration());
-      }
-    };
-
-    window.addEventListener('upmove:settings-changed', refreshFrequency);
-    window.addEventListener('upmove:settings-loaded', refreshFrequency);
-
-    updateAlertText();
-  })();
-</script>
+<script
+  src="/project-in-beweging/assets/js/home-page.js?v=<?= filemtime(__DIR__ . '/../../assets/js/home-page.js') ?>"
+  defer></script>
+<script
+  src="/project-in-beweging/assets/js/activity-interactions.js?v=<?= filemtime(__DIR__ . '/../../assets/js/activity-interactions.js') ?>"
+  defer></script>

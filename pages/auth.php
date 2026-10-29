@@ -328,6 +328,15 @@ try {
         $redirectWithMessage('Dit e-mailadres of deze gebruikersnaam is al in gebruik.');
     }
 
+    if (
+        $mode === 'login' &&
+        (int) ($exception->errorInfo[1] ?? 0) === 1146 &&
+        str_contains($exception->getMessage(), 'login_rate_limits')
+    ) {
+        error_log('Authenticatie/databasefout: tabel login_rate_limits ontbreekt; voer de bijbehorende migratie uit.');
+        $redirectWithMessage('De database is nog niet bijgewerkt. Importeer database/migrations/001_login_rate_limits.sql en probeer het opnieuw.');
+    }
+
     error_log('Authenticatie/databasefout: ' . $exception->getMessage());
     $redirectWithMessage('Er ging iets mis met de database. Controleer of de database is ingesteld en probeer het opnieuw.');
 }

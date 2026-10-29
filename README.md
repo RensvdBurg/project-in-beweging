@@ -14,9 +14,9 @@ Tijdens ontwikkelen: npm run dev
 
 # Database instellen
 
-Voor een nieuwe installatie: maak een lege database `bewegingsapp` aan met utf8mb4_unicode_ci, selecteer deze en importeer `database/schema.sql` via phpMyAdmin. Importeer dit basisschema niet over een bestaande database.
+Voor een nieuwe installatie: maak een lege database `bewegingsapp` aan met utf8mb4_unicode_ci, selecteer deze en importeer via phpMyAdmin achtereenvolgens `database/schema.sql`, `database/challenge_completions.sql` en `database/migrations/001_login_rate_limits.sql`. Importeer `database/schema.sql` niet over een bestaande database.
 
-Voer ook `database/challenge_completions.sql` uit in de database `bewegingsapp`. Deze tabel registreert voltooide opdrachten, zodat dezelfde opdracht binnen de actieve opdrachtperiode maar één keer XP oplevert. De XP wordt opgeslagen in `users.xp`.
+`database/challenge_completions.sql` registreert voltooide opdrachten, zodat dezelfde opdracht binnen de actieve opdrachtperiode maar één keer XP oplevert. De XP wordt opgeslagen in `users.xp`.
 
 De standaardverbinding gebruikt `localhost`, database `bewegingsapp`, gebruiker `root` en een leeg wachtwoord. Stel voor een andere omgeving de variabelen `DB_HOST`, `DB_PORT` (standaard 3306), `DB_NAME`, `DB_USER` en `DB_PASSWORD` in.
 

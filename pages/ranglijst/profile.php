@@ -39,7 +39,7 @@ try {
     $db = getDatabaseConnection();
     $userSettingsData = getUserSettings($db, $userId);
     $profileStatement = $db->prepare(
-        'SELECT id, username, full_name, COALESCE(xp, 0) AS xp
+        'SELECT id, username, full_name, about_me, COALESCE(xp, 0) AS xp
          FROM users
          WHERE id = :user_id'
     );
@@ -150,6 +150,12 @@ $pageTitle = isset($profile) && is_array($profile)
                 </span>
                 <h2 class="mt-4 text-xl font-extrabold"><?= $escape($profile['full_name']) ?></h2>
                 <p class="mt-1 text-sm font-medium text-muted">@<?= $escape($profile['username']) ?></p>
+                <?php if ($profile['about_me'] !== ''): ?>
+                    <div class="mt-4 border-t border-[#eceef2] pt-4 text-left">
+                        <h3 class="text-sm font-bold">Over mij</h3>
+                        <p class="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted"><?= nl2br($escape($profile['about_me'])) ?></p>
+                    </div>
+                <?php endif; ?>
                 <div class="mt-6 grid grid-cols-2 gap-3">
                     <div class="rounded-2xl bg-app-bg p-4">
                         <p class="text-xs font-semibold text-muted">Totaal XP</p>

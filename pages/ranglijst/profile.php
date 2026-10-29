@@ -24,9 +24,20 @@ if (!is_int($profileId)) {
 }
 
 require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/../../database/user-settings.php';
+
+$userId = (int) $_SESSION['user']['id'];
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$userSettingsData = [
+    'settings' => getDefaultUserSettings(),
+    'exists' => false,
+];
 
 try {
     $db = getDatabaseConnection();
+    $userSettingsData = getUserSettings($db, $userId);
     $profileStatement = $db->prepare(
         'SELECT id, username, full_name, COALESCE(xp, 0) AS xp
          FROM users
@@ -79,9 +90,23 @@ $pageTitle = isset($profile) && is_array($profile)
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f7f8fa">
+    <meta name="theme-color" content="#f7f8fa" id="theme-color">
     <title><?= $escape($pageTitle) ?></title>
     <link rel="stylesheet" href="/project-in-beweging/css/output.css?v=<?= $cssVersion ?>">
+    <meta
+        name="upmove-initial-settings"
+        content="<?= htmlspecialchars(
+            json_encode([
+                'userId' => $userId,
+                'csrfToken' => $_SESSION['csrf_token'],
+                'settings' => $userSettingsData['settings'],
+                'exists' => $userSettingsData['exists'],
+            ], JSON_THROW_ON_ERROR),
+            ENT_QUOTES,
+            'UTF-8'
+        ) ?>">
+    <script
+        src="/project-in-beweging/assets/js/app-settings.js?v=<?= filemtime(__DIR__ . '/../../assets/js/app-settings.js') ?>"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -126,11 +151,11 @@ $pageTitle = isset($profile) && is_array($profile)
                 <h2 class="mt-4 text-xl font-extrabold"><?= $escape($profile['full_name']) ?></h2>
                 <p class="mt-1 text-sm font-medium text-muted">@<?= $escape($profile['username']) ?></p>
                 <div class="mt-6 grid grid-cols-2 gap-3">
-                    <div class="rounded-2xl bg-app-bg/60 p-4">
+                    <div class="rounded-2xl bg-app-bg p-4">
                         <p class="text-xs font-semibold text-muted">Totaal XP</p>
                         <p class="mt-1 text-lg font-extrabold text-orange"><?= (int) $profile['xp'] ?></p>
                     </div>
-                    <div class="rounded-2xl bg-app-bg/60 p-4">
+                    <div class="rounded-2xl bg-app-bg p-4">
                         <p class="text-xs font-semibold text-muted">Rang</p>
                         <p class="mt-1 text-lg font-extrabold text-orange">#<?= $profileRank ?></p>
                     </div>

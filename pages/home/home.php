@@ -182,7 +182,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
       </div>
       <a
         href="/project-in-beweging/pages/activiteit/activiteit.php"
-        class="home-action inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-ink shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
+        class="home-action activity-nav-button inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-ink shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
       >
         Activiteiten
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">

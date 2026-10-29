@@ -116,6 +116,10 @@ html.upmove-dark .activity-feed-page-link {
   color: #ffffff;
 }
 
+html.upmove-dark #screen-home .activity-nav-button {
+  color: #ffffff;
+}
+
 /* Footer */
 
 html.upmove-dark .upmove-footer {
@@ -727,6 +731,7 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
 
 html.upmove-dark #screen-home .completion-feedback--success {
   background: linear-gradient(110deg, #203a37, #202630 78%);
+  color: #ffffff;
 }
 
 @keyframes leaderboard-rise-in {

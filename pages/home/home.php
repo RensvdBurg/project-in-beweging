@@ -138,14 +138,24 @@ try {
   $activityOffset = ($activityPage - 1) * $activityPageSize;
 
   $activityStatement = $activityDb->prepare(
-    'SELECT activity_posts.title, activity_posts.description,
+    'SELECT activity_posts.id, activity_posts.title, activity_posts.description,
             activity_posts.image_filename, activity_posts.created_at,
-            COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name
+            COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name,
+            (SELECT COUNT(*) FROM activity_post_likes
+             WHERE activity_post_likes.post_id = activity_posts.id) AS like_count,
+            EXISTS (
+              SELECT 1 FROM activity_post_likes
+              WHERE activity_post_likes.post_id = activity_posts.id
+                AND activity_post_likes.user_id = :current_user_id
+            ) AS liked_by_user,
+            (SELECT COUNT(*) FROM activity_post_comments
+             WHERE activity_post_comments.post_id = activity_posts.id) AS comment_count
      FROM activity_posts
      LEFT JOIN users ON users.id = activity_posts.user_id
      ORDER BY activity_posts.created_at DESC, activity_posts.id DESC
      LIMIT :limit OFFSET :offset'
   );
+  $activityStatement->bindValue(':current_user_id', (int) $_SESSION['user']['id'], PDO::PARAM_INT);
   $activityStatement->bindValue(':limit', $activityPageSize, PDO::PARAM_INT);
   $activityStatement->bindValue(':offset', $activityOffset, PDO::PARAM_INT);
   $activityStatement->execute();
@@ -182,7 +192,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
       </div>
       <a
         href="/project-in-beweging/pages/activiteit/activiteit.php"
-        class="home-action inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-ink shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
+        class="home-action activity-nav-button inline-flex shrink-0 items-center gap-2 rounded-full bg-orange px-4 py-2.5 text-sm font-extrabold text-ink shadow-[0_6px_16px_rgba(255,107,74,0.28)] hover:brightness-95"
       >
         Activiteiten
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -354,7 +364,8 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
       
     </section>
 
-    <section class="home-motion mt-6" id="activity-feed" aria-labelledby="activity-feed-title">
+    <section class="home-motion mt-6" id="activity-feed" aria-labelledby="activity-feed-title"
+      data-csrf-token="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
       <header class="mb-3">
         <p class="mb-1 text-sm font-bold text-orange">Samen in beweging</p>
         <h2 id="activity-feed-title" class="text-xl font-extrabold tracking-tight">Activiteiten van iedereen</h2>
@@ -379,6 +390,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
                   alt="<?= $escapeActivityFeed($activityPost['title']) ?>"
                   class="h-48 w-full object-cover"
                   loading="lazy">
+                <?php require __DIR__ . '/../../components/activity-interactions.php'; ?>
                 <div class="p-4">
                   <p class="text-xs font-bold text-orange">
                     <?= $escapeActivityFeed($activityPost['author_name']) ?>
@@ -426,4 +438,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
 
 <script
   src="/project-in-beweging/assets/js/home-page.js?v=<?= filemtime(__DIR__ . '/../../assets/js/home-page.js') ?>"
+  defer></script>
+<script
+  src="/project-in-beweging/assets/js/activity-interactions.js?v=<?= filemtime(__DIR__ . '/../../assets/js/activity-interactions.js') ?>"
   defer></script>

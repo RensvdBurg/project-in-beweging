@@ -77,6 +77,7 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
     password: 'Test-password-123!', confirmPassword: 'Test-password-123!', day: '1', month: '1', year: '2000' };
   await t.test('unauthenticated settings and home are protected', async () => {
     assert.equal((await stranger.request('/pages/settings/settings-api.php')).status, 401);
+    assert.equal((await stranger.request('/pages/activiteit/interactions.php?post_id=1')).status, 401);
     assert.equal((await stranger.request('/pages/home/home.php')).status, 303);
   });
   await user.request();

@@ -2,6 +2,7 @@
 
 @source "../*.php";
 @source "../pages";
+@source "../components";
 @source inline("my-4 mt-3 table h-[210px] w-[210px] flex-shrink border-collapse resize bg-[#ff6b4a] bg-white/70 object-cover text-ink text-orange-streak underline filter backdrop-filter hover:bg-[#e02e06] hover:bg-teal-soft disabled:opacity-50 disabled:opacity-60 left-1 mt-0 mb-0 ml-0 -translate-x-1 transform gap-0 overflow-x-clip px-0 px-1 outline ease-out");
 
 @theme {
@@ -113,6 +114,27 @@ html.upmove-dark body {
 }
 
 html.upmove-dark .activity-feed-page-link {
+  color: #ffffff;
+}
+
+html.upmove-dark .activity-interaction-icon {
+  color: #ffffff;
+}
+
+.activity-interaction-icon {
+  color: #000000;
+}
+
+.activity-interaction-count {
+  color: #000000;
+}
+
+html.upmove-dark .activity-interaction-count {
+  color: #ffffff;
+}
+
+html.upmove-dark #screen-home .activity-nav-button {
+  background-color: #a33b26;
   color: #ffffff;
 }
 
@@ -727,6 +749,7 @@ html.upmove-dark .upmove-settings a.settings-card:hover {
 
 html.upmove-dark #screen-home .completion-feedback--success {
   background: linear-gradient(110deg, #203a37, #202630 78%);
+  color: #ffffff;
 }
 
 @keyframes leaderboard-rise-in {

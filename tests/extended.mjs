@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
+import { chromium } from 'playwright';
 import { readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -23,6 +24,67 @@ export async function extendedChecks({ t, user, client, db, state, env, php, ses
     assert.deepEqual(await readdir(env.ACTIVITY_UPLOAD_DIR), files);
   });
   await t.test('migration can upgrade populated baseline twice without data loss', () => db('migrate-check'));
+  await t.test('activity posts can be liked and receive persisted comments', async () => {
+    const feed = await user.request('/index.php?screen=home');
+    const postMatch = feed.body.match(/data-activity-post-id="(\d+)"/);
+    assert.ok(postMatch, 'activity card should expose its post ID');
+    const csrfMatch = feed.body.match(/name="csrf_token" value="([a-f0-9]{64})"/);
+    assert.ok(csrfMatch, 'activity page should include the session CSRF token');
+    const postId = Number(postMatch[1]);
+    const csrfToken = csrfMatch[1];
+    const endpoint = '/pages/activiteit/interactions.php';
+    const send = (values, csrfToken) => user.request(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+      body: JSON.stringify({ postId, ...values }),
+    });
+
+    assert.equal((await send({ action: 'like' }, 'invalid')).status, 400);
+    const liked = await send({ action: 'like' }, csrfToken);
+    assert.equal(liked.status, 200);
+    assert.deepEqual(JSON.parse(liked.body), { liked: true, likeCount: 1 });
+    const unliked = await send({ action: 'like' }, csrfToken);
+    assert.deepEqual(JSON.parse(unliked.body), { liked: false, likeCount: 0 });
+
+    const likedAgain = await send({ action: 'like' }, csrfToken);
+    assert.equal(JSON.parse(likedAgain.body).likeCount, 1);
+    const commentBody = '<script>alert(1)</script> Leuke activiteit!';
+    const comment = await send({ action: 'comment', body: commentBody }, csrfToken);
+    assert.equal(comment.status, 201);
+    assert.equal(JSON.parse(comment.body).commentCount, 1);
+    const comments = await user.request(`${endpoint}?post_id=${postId}`);
+    assert.equal(comments.status, 200);
+    assert.equal(JSON.parse(comments.body).comments[0].body, commentBody);
+
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${port}/project-in-beweging/index.php`);
+      await page.locator('#loginEmail').fill('ci@example.invalid');
+      await page.locator('#loginPassword').fill('Test-password-123!');
+      await Promise.all([
+        page.waitForURL('**/index.php'),
+        page.locator('#loginForm button[type=submit]').click(),
+      ]);
+      await page.locator('#screen-home').waitFor({ state: 'visible' });
+
+      const likeButton = page.locator('.activity-like-button').first();
+      await likeButton.click();
+      const likeCount = await likeButton.locator('[data-like-count]').elementHandle();
+      await page.waitForFunction(element => element.textContent === '0', likeCount);
+      assert.equal(await likeButton.locator('[data-like-count]').textContent(), '0');
+
+      await page.locator('.activity-comments-toggle').first().click();
+      const commentList = page.locator('.activity-comments-list').first();
+      await commentList.getByText(commentBody, { exact: true }).waitFor();
+      await page.locator('.activity-comment-input').first().fill('Browser <img src=x onerror=alert(1)>');
+      await page.locator('.activity-comment-form button[type=submit]').first().click();
+      await commentList.getByText('Browser <img src=x onerror=alert(1)>', { exact: true }).waitFor();
+      assert.equal(await commentList.locator('img').count(), 0);
+    } finally {
+      await browser.close();
+    }
+  });
   await t.test('SQL injection cannot log in; profile XSS is escaped', async () => {
     const attacker = client(); await attacker.request();
     await attacker.post({ action: 'login', email: "' OR 1=1 --", password: 'anything' });

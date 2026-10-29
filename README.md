@@ -14,7 +14,7 @@ Tijdens ontwikkelen: npm run dev
 
 # Database instellen
 
-Voor een nieuwe installatie: maak een lege database `bewegingsapp` aan met utf8mb4_unicode_ci, selecteer deze en importeer via phpMyAdmin achtereenvolgens `database/schema.sql`, `database/challenge_completions.sql` en `database/migrations/001_login_rate_limits.sql`. Importeer `database/schema.sql` niet over een bestaande database.
+Voor een nieuwe installatie: maak een lege database `bewegingsapp` aan met utf8mb4_unicode_ci, selecteer deze en importeer via phpMyAdmin achtereenvolgens `database/schema.sql`, `database/challenge_completions.sql`, `database/migrations/001_login_rate_limits.sql` en `database/migrations/002_activity_interactions.sql`. Importeer `database/schema.sql` niet over een bestaande database.
 
 `database/challenge_completions.sql` registreert voltooide opdrachten, zodat dezelfde opdracht binnen de actieve opdrachtperiode maar één keer XP oplevert. De XP wordt opgeslagen in `users.xp`.
 
@@ -208,12 +208,18 @@ horen niet in een publiek toegankelijke productie-documentroot.
 
 ### Eenmalige database-update voor bestaande installaties
 
-Importeer **alleen** `database/migrations/001_login_rate_limits.sql` in de bestaande
-appdatabase, voordat je met deze versie inlogt. Importeer niet opnieuw schema.sql.
-De migratie voegt uitsluitend de tabel login_rate_limits toe en kan opnieuw worden
-uitgevoerd. De test verifieert behoud van bestaande accounts, wachtwoordhashes en
-instellingen wanneer de migratie tweemaal wordt toegepast. Bestaande ontwikkel- en
-productiedatabases worden door de tests nooit aangepast.
+Importeer in de bestaande appdatabase de migraties die nog ontbreken; importeer niet
+opnieuw schema.sql:
+
+1. `database/migrations/001_login_rate_limits.sql` voegt de tabel `login_rate_limits`
+   toe voor het begrenzen van inlogpogingen.
+2. `database/migrations/002_activity_interactions.sql` voegt likes en reacties op
+   activiteiten toe.
+
+Beide migraties kunnen veilig opnieuw worden uitgevoerd en wijzigen geen bestaande
+accounts of activiteiten. De tabellen voor activiteitlikes en reacties worden ook
+automatisch aangemaakt wanneer ze nog ontbreken; de databasegebruiker heeft daarvoor
+CREATE TABLE-rechten nodig.
 
 Inloggen is nu begrensd op vijf pogingen per genormaliseerde loginnaam en dertig
 pogingen per IP in een vast venster van vijftien minuten. Een geldige login reset

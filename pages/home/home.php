@@ -218,7 +218,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
           doen.</span>
       </span>
       <button type="button" id="btn-dismiss-alert"
-        class="home-action cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-teal transition hover:bg-teal-soft active:scale-95"
+        class="home-action cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full border border-black bg-white text-teal transition hover:bg-teal-soft active:scale-95"
         aria-label="Melding sluiten voor 60 minuten" title="Sluiten voor 60 minuten">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"

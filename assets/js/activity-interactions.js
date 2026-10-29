@@ -45,7 +45,7 @@
 
     for (const comment of comments) {
       const item = document.createElement('li');
-      item.className = 'rounded-xl bg-app-bg/60 px-3 py-2';
+      item.className = 'rounded-xl bg-app-bg px-3 py-2';
 
       const author = document.createElement('p');
       author.className = 'text-xs font-bold';

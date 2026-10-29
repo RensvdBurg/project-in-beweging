@@ -138,7 +138,7 @@ try {
   $activityOffset = ($activityPage - 1) * $activityPageSize;
 
   $activityStatement = $activityDb->prepare(
-    'SELECT activity_posts.id, activity_posts.title, activity_posts.description,
+    'SELECT activity_posts.id, activity_posts.user_id, activity_posts.title, activity_posts.description,
             activity_posts.image_filename, activity_posts.created_at,
             COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name,
             (SELECT COUNT(*) FROM activity_post_likes
@@ -392,9 +392,12 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
                   loading="lazy">
                 <?php require __DIR__ . '/../../components/activity-interactions.php'; ?>
                 <div class="p-4">
-                  <p class="text-xs font-bold text-orange">
+                  <a
+                    href="/project-in-beweging/pages/ranglijst/profile.php?id=<?= (int) $activityPost['user_id'] ?>&amp;from=home"
+                    class="inline-block text-xs font-bold text-orange underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
+                    aria-label="Bekijk het profiel van <?= $escapeActivityFeed($activityPost['author_name']) ?>">
                     <?= $escapeActivityFeed($activityPost['author_name']) ?>
-                  </p>
+                  </a>
                   <h3 class="mt-1 text-base font-extrabold tracking-tight">
                     <?= $escapeActivityFeed($activityPost['title']) ?>
                   </h3>

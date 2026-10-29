@@ -16,27 +16,23 @@ $months = [
 $currentYear = (int) date('Y');
 ?>
 
-<main class="relative flex min-h-dvh flex-col items-center overflow-hidden bg-background px-4 pb-12 pt-[71px] sm:justify-center sm:py-12">
+<main class="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-[#f4f7f6] px-4 py-8 sm:py-12">
     <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <svg class="absolute left-0 top-0 h-[260px] w-full fill-primary drop-shadow-[0_5px_8px_oklch(0.25_0_0/0.18)] min-[700px]:h-[34%]" viewBox="0 0 402 260" preserveAspectRatio="none">
-            <path d="M0 0H402C376 0 343 7 309 72C287 111 275 134 252 177C223 219 199 232 146 233C77 232 0 175 0 175Z" />
-        </svg>
-        <svg class="absolute bottom-0 left-0 h-[min(42.2%,370px)] w-full fill-primary drop-shadow-[0_-4px_8px_oklch(0.25_0_0/0.13)] min-[700px]:h-[47%]" viewBox="0 0 402 370" preserveAspectRatio="none">
-            <path d="M0 222C10 232 64 279 134 279C220 279 236 243 258 212C278 175 314 107 314 107L346 56C370 25 382 15 402 0V370H0Z" />
-        </svg>
+        <span class="absolute -right-32 -top-36 h-[26rem] w-[26rem] rounded-full bg-[#dcefe9] opacity-70 blur-3xl"></span>
+        <span class="absolute -bottom-40 -left-36 h-[25rem] w-[25rem] rounded-full bg-[#f9e9df] opacity-60 blur-3xl"></span>
     </div>
 
     <div class="relative z-10 w-full max-w-[402px] sm:max-w-[440px]">
-        <div id="logo" class="<?= $activeAuthMode === 'register' ? 'mb-[24px]' : 'mb-[133px]' ?> ml-[calc(50%-147px)] flex items-center gap-[6px] sm:ml-[22px]">
-            <span class="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[10px] bg-card shadow-[0_5px_19px_oklch(0.25_0_0/0.18)]" aria-hidden="true">
-                <svg class="h-5 w-5 text-[#17685b]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <div id="logo" class="mb-6 flex items-center justify-center gap-3">
+            <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#17685b] shadow-[0_8px_20px_rgba(23,104,91,0.2)]" aria-hidden="true">
+                <svg class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
                 </svg>
             </span>
-            <span class="text-[20px] font-bold text-foreground">UpMove</span>
+            <span class="text-2xl font-extrabold tracking-tight text-foreground">UpMove</span>
         </div>
 
-        <section id="login" class="mx-auto w-full max-w-[322px] rounded-[24px] bg-card px-[32px] pb-[49px] pt-[42px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]<?= $activeAuthMode === 'register' ? ' hidden' : '' ?>" aria-labelledby="loginTitle">
+        <section id="login" class="mx-auto w-full max-w-[322px] rounded-[24px] border border-[#e6ece9] bg-white/95 px-[32px] pb-[42px] pt-[36px] shadow-[0_24px_70px_rgba(16,54,46,0.12)] sm:max-w-[360px]<?= $activeAuthMode === 'register' ? ' hidden' : '' ?>" aria-labelledby="loginTitle">
             <?php if ($currentUser !== null): ?>
                 <h1 id="loginTitle" class="mb-[16px] text-[20px] font-semibold text-card-foreground">Je bent ingelogd</h1>
                 <p class="mb-[20px] text-center text-sm text-card-foreground">Welkom, <?= htmlspecialchars($currentUser['full_name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars($currentUser['username'], ENT_QUOTES, 'UTF-8') ?>).</p>
@@ -65,7 +61,7 @@ $currentYear = (int) date('Y');
             <?php endif; ?>
         </section>
 
-        <section id="register" class="relative left-[3px] mx-auto w-full max-w-[322px] rounded-[24px] bg-card pb-[23px] pl-[26px] pr-[32px] pt-[20px] shadow-[0_5px_19px_oklch(0.25_0_0/0.18)] sm:max-w-[360px]<?= $activeAuthMode === 'register' && $currentUser === null ? '' : ' hidden' ?>" aria-labelledby="registerTitle">
+        <section id="register" class="mx-auto w-full max-w-[322px] rounded-[24px] border border-[#e6ece9] bg-white/95 px-[28px] pb-[24px] pt-[24px] shadow-[0_24px_70px_rgba(16,54,46,0.12)] sm:max-w-[360px]<?= $activeAuthMode === 'register' && $currentUser === null ? '' : ' hidden' ?>" aria-labelledby="registerTitle">
             <h1 id="registerTitle" class="mb-[11px] text-[20px] font-semibold text-card-foreground">Registreren</h1>
             <form id="registerForm" method="post" class="flex flex-col gap-[21px]">
                 <input type="hidden" name="action" value="register">

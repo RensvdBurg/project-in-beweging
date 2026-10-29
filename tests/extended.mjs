@@ -16,6 +16,14 @@ export async function extendedChecks({ t, user, client, db, state, env, php, ses
     assert.equal(files.length, 1);
     assert.match(files[0], /^[a-f0-9]{32}\.png$/);
     assert.match((await user.request('/pages/activiteit/activiteit.php')).body, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    const home = await user.request('/index.php?screen=home');
+    const profileLink = home.body.match(/href="\/project-in-beweging\/pages\/ranglijst\/profile\.php\?id=(\d+)&amp;from=home"/);
+    assert.ok(profileLink, 'activity author name should link to its profile');
+    const profile = await user.request(`/pages/ranglijst/profile.php?id=${profileLink[1]}&from=home`);
+    assert.equal(profile.status, 200);
+    assert.match(profile.body, /<h2 id="profile-activities-title"[^>]*>Activiteiten<\/h2>/);
+    assert.match(profile.body, /CI image/);
+    assert.match(profile.body, /alert\(1\)/);
     for (const [data, filename, type, message] of [
       [Buffer.from('<?php echo 1; ?>'), 'fake.png', 'image/png', /geldige JPG/],
       [Buffer.alloc(0), 'empty.png', 'image/png', /maximaal 5 MB/],

@@ -107,6 +107,25 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
     assert.equal((await user.settings({ frequency: 120 }, false)).status, 400);
     assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
   });
+  await t.test('about-me text saves to the account and appears safely on the ranked profile', async () => {
+    const aboutMe = 'Ik wandel graag.\n<script>alert("x")</script>';
+    assert.equal((await user.request('/pages/settings/account.php')).status, 200);
+    const saved = await user.form('/pages/settings/account.php', { action: 'about_me', about_me: aboutMe });
+    assert.equal(saved.status, 200);
+    assert.match(saved.body, /Je stukje over jezelf is opgeslagen/);
+    assert.match(saved.body, /Ik wandel graag\.\n&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/);
+    const invalidBio = await user.form('/pages/settings/account.php', {
+      action: 'about_me',
+      about_me: 'x'.repeat(501),
+    });
+    assert.equal(invalidBio.status, 200);
+    assert.match(invalidBio.body, /maximaal 500 tekens/);
+    const profile = await user.request('/pages/ranglijst/profile.php?id=1');
+    assert.equal(profile.status, 200);
+    assert.match(profile.body, /Ik wandel graag\.<br \/>/);
+    assert.match(profile.body, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/);
+    assert.doesNotMatch(profile.body, /<script>alert/);
+  });
   await t.test('completion awards XP once and rejects invalid CSRF', async () => {
     // Avoid crossing the application's 90-minute time boundary during the pair of requests.
     const remaining = 5400000 - Date.now() % 5400000;

@@ -19,7 +19,7 @@ if ($operation === 'create') {
 if ($operation === 'drop') { $db->exec("DROP DATABASE `$name`"); exit; }
 $db->exec("USE `$name`");
 if ($operation === 'init') {
-    foreach (['database/schema.sql', 'database/challenge_completions.sql', 'database/migrations/001_login_rate_limits.sql', 'database/migrations/002_activity_interactions.sql', 'tests/fixtures.sql'] as $file) {
+    foreach (['database/schema.sql', 'database/challenge_completions.sql', 'database/migrations/001_login_rate_limits.sql', 'database/migrations/002_activity_interactions.sql', 'database/migrations/003_user_about_me.sql', 'tests/fixtures.sql'] as $file) {
         $db->exec(file_get_contents(__DIR__ . '/../' . $file));
     }
 } elseif ($operation === 'migrate-check') {
@@ -31,6 +31,7 @@ if ($operation === 'init') {
     for ($i = 0; $i < 2; $i++) {
         $db->exec(file_get_contents(__DIR__ . '/../database/migrations/001_login_rate_limits.sql'));
         $db->exec(file_get_contents(__DIR__ . '/../database/migrations/002_activity_interactions.sql'));
+        $db->exec(file_get_contents(__DIR__ . '/../database/migrations/003_user_about_me.sql'));
     }
     if ($before !== $db->query('SELECT * FROM users ORDER BY id')->fetchAll(PDO::FETCH_ASSOC)
         || $settingsBefore !== $db->query('SELECT * FROM user_settings ORDER BY user_id')->fetchAll(PDO::FETCH_ASSOC)) {

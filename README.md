@@ -14,7 +14,7 @@ Tijdens ontwikkelen: npm run dev
 
 # Database instellen
 
-Voor een nieuwe installatie: maak een lege database `bewegingsapp` aan met utf8mb4_unicode_ci, selecteer deze en importeer via phpMyAdmin achtereenvolgens `database/schema.sql`, `database/challenge_completions.sql`, `database/migrations/001_login_rate_limits.sql` en `database/migrations/002_activity_interactions.sql`. Importeer `database/schema.sql` niet over een bestaande database.
+Voor een nieuwe installatie: maak een lege database `bewegingsapp` aan met utf8mb4_unicode_ci, selecteer deze en importeer via phpMyAdmin achtereenvolgens `database/schema.sql`, `database/challenge_completions.sql`, `database/migrations/001_login_rate_limits.sql`, `database/migrations/002_activity_interactions.sql` en `database/migrations/003_user_about_me.sql`. Importeer `database/schema.sql` niet over een bestaande database. Voer bij een bestaande installatie de nieuwe migratie `003_user_about_me.sql` eenmalig uit.
 
 `database/challenge_completions.sql` registreert voltooide opdrachten, zodat dezelfde opdracht binnen de actieve opdrachtperiode maar één keer XP oplevert. De XP wordt opgeslagen in `users.xp`.
 
@@ -23,6 +23,8 @@ De standaardverbinding gebruikt `localhost`, database `bewegingsapp`, gebruiker 
 Registratie bewaart het e-mailadres, de gebruikersnaam, volledige naam en geboortedatum. Het wachtwoord wordt als hash opgeslagen; het herhaalde wachtwoord wordt alleen gebruikt om de invoer te controleren.
 
 Persoonlijke instellingen (bewegingsdoel/herinneringsfrequentie, werk- of schooldagen en -tijden, en dark mode) worden per account opgeslagen in de tabel `user_settings`. De tabel wordt automatisch aangemaakt bij het eerste bezoek van een ingelogde gebruiker; de databasegebruiker heeft daarvoor toestemming nodig om tabellen aan te maken. Bestaande instellingen uit de browser worden eenmalig naar het account overgezet wanneer daarvoor nog geen database-instellingen bestaan.
+
+Gebruikers kunnen een optioneel stukje van maximaal 500 tekens over zichzelf opslaan in hun account. Deze tekst wordt bij hun ranglijstprofiel aan andere ingelogde gebruikers getoond.
 
 # github push
 

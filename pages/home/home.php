@@ -138,7 +138,7 @@ try {
   $activityOffset = ($activityPage - 1) * $activityPageSize;
 
   $activityStatement = $activityDb->prepare(
-    'SELECT activity_posts.id, activity_posts.title, activity_posts.description,
+    'SELECT activity_posts.id, activity_posts.user_id, activity_posts.title, activity_posts.description,
             activity_posts.image_filename, activity_posts.created_at,
             COALESCE(users.full_name, users.username, "UpMove-gebruiker") AS author_name,
             (SELECT COUNT(*) FROM activity_post_likes
@@ -218,7 +218,7 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
           doen.</span>
       </span>
       <button type="button" id="btn-dismiss-alert"
-        class="home-action cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-teal transition hover:bg-teal-soft active:scale-95"
+        class="home-action cursor-pointer grid h-10 w-10 shrink-0 place-items-center rounded-full border border-black bg-white text-teal transition hover:bg-teal-soft active:scale-95"
         aria-label="Melding sluiten voor 60 minuten" title="Sluiten voor 60 minuten">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="m5 12 4.5 4.5L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
@@ -392,9 +392,12 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
                   loading="lazy">
                 <?php require __DIR__ . '/../../components/activity-interactions.php'; ?>
                 <div class="p-4">
-                  <p class="text-xs font-bold text-orange">
+                  <a
+                    href="/project-in-beweging/pages/ranglijst/profile.php?id=<?= (int) $activityPost['user_id'] ?>&amp;from=home"
+                    class="inline-block text-xs font-bold text-orange underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
+                    aria-label="Bekijk het profiel van <?= $escapeActivityFeed($activityPost['author_name']) ?>">
                     <?= $escapeActivityFeed($activityPost['author_name']) ?>
-                  </p>
+                  </a>
                   <h3 class="mt-1 text-base font-extrabold tracking-tight">
                     <?= $escapeActivityFeed($activityPost['title']) ?>
                   </h3>

@@ -114,7 +114,7 @@ function footerItemClass(bool $active): string
 
     <!-- STATISTIEKEN -->
     <a
-      href="/project-in-beweging/?screen=stats"
+      href="/project-in-beweging/pages/statistics/statistics.php"
       class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'stats') ?>"
       data-screen="stats">
       <svg

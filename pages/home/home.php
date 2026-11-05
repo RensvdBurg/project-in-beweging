@@ -296,6 +296,11 @@ $challengeCompletionSucceeded = $challengeCompleted;
               <?php endif; ?>
             </span>
           </button>
+          <a
+            href="/project-in-beweging/pages/learn/learn-beschrijving.php?challenge=<?= (int) $selectedChallenge['id'] ?>"
+            class="home-action block w-full rounded-xl border border-teal px-4 py-3 text-center text-sm font-extrabold text-teal transition hover:bg-teal-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal">
+            Wat is dit?
+          </a>
           <?php if ($challengeCompletionNotice !== ''): ?>
             <p class="completion-feedback rounded-xl bg-white/70 px-3 py-2 text-sm font-semibold text-ink <?= $challengeCompletionSucceeded ? 'completion-feedback--success flex items-center gap-2' : '' ?>" role="status">
               <?php if ($challengeCompletionSucceeded): ?>

@@ -100,12 +100,24 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
       assert.equal(state().users, 1);
     }
   });
-  const settings = { frequency: 30, darkMode: true, workOnly: true, workStart: '09:00', workEnd: '16:00', workDays: [1, 3, 5] };
+  const legacySettings = { frequency: 30, darkMode: true, workOnly: true, workStart: '09:00', workEnd: '16:00', workDays: [1, 3, 5] };
+  const legacySettingsWithSchedule = {
+    ...legacySettings,
+    workSchedule: Array.from({ length: 7 }, () => ({ start: '09:00', end: '16:00' })),
+  };
+  const perDaySettings = {
+    ...legacySettingsWithSchedule,
+    workSchedule: legacySettingsWithSchedule.workSchedule.map((hours, day) =>
+      day === 3 ? { start: '10:00', end: '18:30' } : hours),
+  };
   await t.test('settings persist and invalid CSRF cannot change them', async () => {
-    assert.equal((await user.settings(settings)).status, 200);
-    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
+    assert.equal((await user.settings(legacySettings)).status, 200);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, legacySettingsWithSchedule);
     assert.equal((await user.settings({ frequency: 120 }, false)).status, 400);
-    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, legacySettingsWithSchedule);
+
+    assert.equal((await user.settings(perDaySettings)).status, 200);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, perDaySettings);
   });
   await t.test('about-me text saves to the account and appears safely on the ranked profile', async () => {
     const aboutMe = 'Ik wandel graag.\n<script>alert("x")</script>';
@@ -135,10 +147,17 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
     assert.equal(state().xp, 0);
     assert.equal((await user.post({ action: 'complete_challenge' })).status, 303);
     assert.equal(state().xp, 25);
+    const completedHome = await user.request();
+    assert.match(completedHome.body, /Lekker bezig!/);
+    assert.match(completedHome.body, /completion-button--success/);
+    const otherPage = await user.request('/index.php?screen=leren');
+    assert.match(otherPage.body, /Lekker bezig!/);
     assert.equal((await user.post({ action: 'complete_challenge' })).status, 303);
     assert.equal(state().xp, 25);
     assert.equal(state().completions, 1);
-    assert.match((await user.request()).body, /al voltooid/);
+    const returnedHome = await user.request();
+    assert.match(returnedHome.body, /al voltooid/);
+    assert.match(returnedHome.body, /Lekker bezig!/);
   });
   await t.test('logout protects account and login rejects incorrect passwords', async () => {
     assert.equal((await user.post({ action: 'logout' })).status, 303);
@@ -149,7 +168,7 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
     assert.equal((await user.request('/pages/settings/settings-api.php')).status, 401);
     await user.post({ action: 'login', email: registration.email, password: registration.password });
     assert.equal((await user.request('/pages/settings/settings-api.php')).status, 200);
-    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, perDaySettings);
   });
   await browserChecks(t, `http://127.0.0.1:${port}`);
   await extendedChecks({ t, user, client, db, state, env, php, sessions, port });

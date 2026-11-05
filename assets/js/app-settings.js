@@ -6,6 +6,10 @@
     workStart: "08:30",
     workEnd: "17:00",
     workDays: [1, 2, 3, 4, 5],
+    workSchedule: Array.from({ length: 7 }, () => ({
+      start: "08:30",
+      end: "17:00",
+    })),
   };
   const initialSettingsElement = document.querySelector(
     'meta[name="upmove-initial-settings"]',
@@ -23,6 +27,10 @@
       workDays: Array.isArray(updatedSettings.workDays)
         ? [...updatedSettings.workDays]
         : [...defaults.workDays],
+      workSchedule: Array.from({ length: 7 }, (_, day) => ({
+        ...((updatedSettings.workSchedule || defaults.workSchedule)[day] ||
+          defaults.workSchedule[day]),
+      })),
     };
 
     document.documentElement.classList.toggle(
@@ -41,6 +49,7 @@
     window.upmoveSettings = Object.freeze({
       ...settings,
       workDays: [...settings.workDays],
+      workSchedule: settings.workSchedule.map((hours) => ({ ...hours })),
     });
   }
 
@@ -55,6 +64,7 @@
       start: settings.workStart,
       end: settings.workEnd,
       days: [...settings.workDays],
+      schedule: settings.workSchedule.map((hours) => ({ ...hours })),
     };
   }
 
@@ -65,17 +75,30 @@
     }
 
     const currentDay = date.getDay();
-    if (!workHours.days.includes(currentDay)) {
+    const currentMinutes = date.getHours() * 60 + date.getMinutes();
+    const todayHours = workHours.schedule[currentDay];
+
+    if (workHours.days.includes(currentDay)) {
+      const start = timeToMinutes(todayHours.start);
+      const end = timeToMinutes(todayHours.end);
+      if (start <= end && currentMinutes >= start && currentMinutes <= end) {
+        return true;
+      }
+      if (start > end && currentMinutes >= start) {
+        return true;
+      }
+    }
+
+    const previousDay = (currentDay + 6) % 7;
+    if (!workHours.days.includes(previousDay)) {
       return false;
     }
 
-    const currentMinutes = date.getHours() * 60 + date.getMinutes();
-    const start = timeToMinutes(workHours.start);
-    const end = timeToMinutes(workHours.end);
-
-    return start <= end
-      ? currentMinutes >= start && currentMinutes <= end
-      : currentMinutes >= start || currentMinutes <= end;
+    const previousHours = workHours.schedule[previousDay];
+    return (
+      timeToMinutes(previousHours.start) > timeToMinutes(previousHours.end) &&
+      currentMinutes <= timeToMinutes(previousHours.end)
+    );
   }
 
   applySettings(settings);

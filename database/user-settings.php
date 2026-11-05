@@ -9,6 +9,7 @@ function getDefaultUserSettings(): array
         'workStart' => '08:30',
         'workEnd' => '17:00',
         'workDays' => [1, 2, 3, 4, 5],
+        'workSchedule' => array_fill(0, 7, ['start' => '08:30', 'end' => '17:00']),
     ];
 }
 
@@ -56,6 +57,14 @@ function normalizeUserSettings(array $settings): array
     $defaults = getDefaultUserSettings();
     $frequency = $settings['frequency'] ?? $defaults['frequency'];
     $workDays = $settings['workDays'] ?? $defaults['workDays'];
+    $workStart = is_string($settings['workStart'] ?? null)
+        && preg_match('/\A(?:[01]\d|2[0-3]):[0-5]\d\z/', $settings['workStart'])
+        ? $settings['workStart']
+        : $defaults['workStart'];
+    $workEnd = is_string($settings['workEnd'] ?? null)
+        && preg_match('/\A(?:[01]\d|2[0-3]):[0-5]\d\z/', $settings['workEnd'])
+        ? $settings['workEnd']
+        : $defaults['workEnd'];
 
     if (
         !is_int($frequency) ||
@@ -78,6 +87,32 @@ function normalizeUserSettings(array $settings): array
         $workDays = $defaults['workDays'];
     }
 
+    $workSchedule = $settings['workSchedule'] ?? null;
+    if (!is_array($workSchedule)) {
+        $workSchedule = array_fill(0, 7, [
+            'start' => $workStart,
+            'end' => $workEnd,
+        ]);
+    } else {
+        $normalizedWorkSchedule = [];
+        for ($day = 0; $day <= 6; $day++) {
+            $daySchedule = $workSchedule[$day] ?? null;
+            $normalizedWorkSchedule[$day] = [
+                'start' => is_array($daySchedule)
+                    && is_string($daySchedule['start'] ?? null)
+                    && preg_match('/\A(?:[01]\d|2[0-3]):[0-5]\d\z/', $daySchedule['start'])
+                    ? $daySchedule['start']
+                    : $workStart,
+                'end' => is_array($daySchedule)
+                    && is_string($daySchedule['end'] ?? null)
+                    && preg_match('/\A(?:[01]\d|2[0-3]):[0-5]\d\z/', $daySchedule['end'])
+                    ? $daySchedule['end']
+                    : $workEnd,
+            ];
+        }
+        $workSchedule = $normalizedWorkSchedule;
+    }
+
     return [
         'frequency' => $frequency,
         'darkMode' => is_bool($settings['darkMode'] ?? null)
@@ -86,15 +121,10 @@ function normalizeUserSettings(array $settings): array
         'workOnly' => is_bool($settings['workOnly'] ?? null)
             ? $settings['workOnly']
             : $defaults['workOnly'],
-        'workStart' => is_string($settings['workStart'] ?? null)
-            && preg_match('/\A(?:[01]\d|2[0-3]):[0-5]\d\z/', $settings['workStart'])
-            ? $settings['workStart']
-            : $defaults['workStart'],
-        'workEnd' => is_string($settings['workEnd'] ?? null)
-            && preg_match('/\A(?:[01]\d|2[0-3]):[0-5]\d\z/', $settings['workEnd'])
-            ? $settings['workEnd']
-            : $defaults['workEnd'],
+        'workStart' => $workStart,
+        'workEnd' => $workEnd,
         'workDays' => $workDays,
+        'workSchedule' => $workSchedule,
     ];
 }
 

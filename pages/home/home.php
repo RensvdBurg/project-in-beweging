@@ -44,6 +44,7 @@ $challengeIntervalSeconds = 90 * 60;
 $challengeInterval = intdiv(time(), $challengeIntervalSeconds);
 $challengeChangeAt = ($challengeInterval + 1) * $challengeIntervalSeconds;
 $noDifferentChallengeAvailable = false;
+$challengeCompleted = false;
 
 try {
   $db = getDatabaseConnection();
@@ -93,7 +94,6 @@ try {
     }
   }
 
-  $challengeCompleted = false;
   if ($selectedChallenge !== null) {
     $completionStatement = $db->prepare(
       'SELECT 1 FROM challenge_completions
@@ -166,7 +166,7 @@ try {
 }
 
 $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
-$challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opdracht voltooid!');
+$challengeCompletionSucceeded = $challengeCompleted;
 ?>
 <div
   class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"
@@ -292,10 +292,15 @@ $challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opd
                 </svg>
                 Lekker bezig!
               <?php else: ?>
-                Voltooid
+                Voltooien
               <?php endif; ?>
             </span>
           </button>
+          <a
+            href="/project-in-beweging/pages/learn/learn-beschrijving.php?challenge=<?= (int) $selectedChallenge['id'] ?>"
+            class="home-action block w-full rounded-xl border border-teal px-4 py-3 text-center text-sm font-extrabold text-teal transition hover:bg-teal-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal">
+            Wat is dit?
+          </a>
           <?php if ($challengeCompletionNotice !== ''): ?>
             <p class="completion-feedback rounded-xl bg-white/70 px-3 py-2 text-sm font-semibold text-ink <?= $challengeCompletionSucceeded ? 'completion-feedback--success flex items-center gap-2' : '' ?>" role="status">
               <?php if ($challengeCompletionSucceeded): ?>

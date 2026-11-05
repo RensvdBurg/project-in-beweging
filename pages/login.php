@@ -53,7 +53,13 @@ $currentYear = (int) date('Y');
                         <input id="loginPassword" required type="password" name="password" autocomplete="current-password" placeholder="Wachtwoord" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                     </div>
                     <?php if ($authMessage !== '' && $activeAuthMode === 'login'): ?>
-                        <p id="loginStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-[#17685b]' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                        <div id="loginStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="<?= $authMessageType === 'success' ? 'polite' : 'assertive' ?>" class="flex items-start gap-3 rounded-[16px] border p-3 text-left <?= $authMessageType === 'success' ? 'border-[#b8ddd4] bg-[#edf7f4] text-[#17685b]' : 'border-[#f2c9c7] bg-[#fff3f2] text-flag-red' ?>">
+                            <span class="mt-0.5 shrink-0" aria-hidden="true"><?= $authMessageType === 'success' ? '✓' : '!' ?></span>
+                            <div>
+                                <p class="mb-1 text-xs font-semibold"><?= $authMessageType === 'success' ? 'Inloggen gelukt' : 'Inloggen niet gelukt' ?></p>
+                                <p class="text-xs leading-relaxed"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                            </div>
+                        </div>
                     <?php endif; ?>
                     <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-ink shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Aanmelden</button>
                 </form>
@@ -108,7 +114,13 @@ $currentYear = (int) date('Y');
                     <input id="username" required name="username" autocomplete="username" placeholder="Gebruikersnaam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                 </div>
                 <?php if ($authMessage !== '' && $activeAuthMode === 'register'): ?>
-                    <p id="registerStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="polite" class="text-center text-xs <?= $authMessageType === 'success' ? 'text-[#17685b]' : 'text-flag-red' ?>"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                    <div id="registerStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="<?= $authMessageType === 'success' ? 'polite' : 'assertive' ?>" class="flex items-start gap-3 rounded-[16px] border p-3 text-left <?= $authMessageType === 'success' ? 'border-[#b8ddd4] bg-[#edf7f4] text-[#17685b]' : 'border-[#f2c9c7] bg-[#fff3f2] text-flag-red' ?>">
+                        <span class="mt-0.5 shrink-0" aria-hidden="true"><?= $authMessageType === 'success' ? '✓' : '!' ?></span>
+                        <div>
+                            <p class="mb-1 text-xs font-semibold"><?= $authMessageType === 'success' ? 'Registratie gelukt' : 'Registratie niet gelukt' ?></p>
+                            <p class="text-xs leading-relaxed"><?= htmlspecialchars($authMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                        </div>
+                    </div>
                 <?php endif; ?>
                 <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-ink shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Registreren</button>
             </form>

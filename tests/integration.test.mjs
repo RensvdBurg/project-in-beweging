@@ -100,12 +100,24 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
       assert.equal(state().users, 1);
     }
   });
-  const settings = { frequency: 30, darkMode: true, workOnly: true, workStart: '09:00', workEnd: '16:00', workDays: [1, 3, 5] };
+  const legacySettings = { frequency: 30, darkMode: true, workOnly: true, workStart: '09:00', workEnd: '16:00', workDays: [1, 3, 5] };
+  const legacySettingsWithSchedule = {
+    ...legacySettings,
+    workSchedule: Array.from({ length: 7 }, () => ({ start: '09:00', end: '16:00' })),
+  };
   await t.test('settings persist and invalid CSRF cannot change them', async () => {
-    assert.equal((await user.settings(settings)).status, 200);
-    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
+    assert.equal((await user.settings(legacySettings)).status, 200);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, legacySettingsWithSchedule);
     assert.equal((await user.settings({ frequency: 120 }, false)).status, 400);
-    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, legacySettingsWithSchedule);
+
+    const perDaySettings = {
+      ...legacySettingsWithSchedule,
+      workSchedule: legacySettingsWithSchedule.workSchedule.map((hours, day) =>
+        day === 3 ? { start: '10:00', end: '18:30' } : hours),
+    };
+    assert.equal((await user.settings(perDaySettings)).status, 200);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, perDaySettings);
   });
   await t.test('about-me text saves to the account and appears safely on the ranked profile', async () => {
     const aboutMe = 'Ik wandel graag.\n<script>alert("x")</script>';

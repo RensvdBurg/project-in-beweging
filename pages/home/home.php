@@ -292,7 +292,7 @@ $challengeCompletionSucceeded = $challengeCompleted;
                 </svg>
                 Lekker bezig!
               <?php else: ?>
-                Voltooid
+                Voltooien
               <?php endif; ?>
             </span>
           </button>

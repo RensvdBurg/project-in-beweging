@@ -105,7 +105,7 @@ export async function extendedChecks({ t, user, client, db, state, env, php, ses
   });
   await t.test('two independent PHP servers cannot award the same XP twice', async () => {
     db('reset-completions');
-    const socket = createServer();
+    const socket = createServer();  
     await new Promise((resolve, reject) => { socket.once('error', reject); socket.listen(0, '127.0.0.1', resolve); });
     const secondPort = socket.address().port; await new Promise(resolve => socket.close(resolve));
     const server = spawn(php, ['-d', `session.save_path=${sessions}`, '-S', `127.0.0.1:${secondPort}`, '-t', '.', 'tests/router.php'], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });

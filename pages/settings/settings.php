@@ -257,157 +257,58 @@ $isReturningToSettingsPage = ($_GET['transition'] ?? null) === 'back';
                         class="settings-work-options border-t border-[#eceef2] bg-[#fafbfc] p-4 transition">
 
 
-                        <!-- TIJDEN -->
-
-                        <div class="grid grid-cols-2 gap-3">
-
-
-                            <!-- START -->
-
-                            <div>
-
-                                <label for="setting-work-start"
-                                    class="settings-label mb-1.5 block text-[11px] font-semibold text-[#858c97]">
-                                    Starttijd
-                                </label>
-
-                                <input id="setting-work-start" type="time" value="08:30"
-                                    class="settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange">
-
-                            </div>
-
-
-
-                            <!-- EIND -->
-
-                            <div>
-
-                                <label for="setting-work-end"
-                                    class="settings-label mb-1.5 block text-[11px] font-semibold text-[#858c97]">
-                                    Eindtijd
-                                </label>
-
-                                <input id="setting-work-end" type="time" value="17:00"
-                                    class="settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange">
-
-                            </div>
-
-                        </div>
-
-
-
-                        <!-- DAGEN -->
-
-                        <div class="mt-4">
-
-
+                        <div class="mt-1">
                             <p class="settings-label mb-2 text-[11px] font-semibold text-[#858c97]">
-                                Werk- / schooldagen
+                                Werk- / schooldagen en tijden
                             </p>
 
-
-                            <div class="grid grid-cols-7 gap-1.5">
-
-
-                                <!-- MA -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="1" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Ma
-                                    </span>
-
-                                </label>
-
-
-                                <!-- DI -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="2" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Di
-                                    </span>
-
-                                </label>
-
-
-                                <!-- WO -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="3" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Wo
-                                    </span>
-
-                                </label>
-
-
-                                <!-- DO -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="4" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Do
-                                    </span>
-
-                                </label>
-
-
-                                <!-- VR -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="5" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Vr
-                                    </span>
-
-                                </label>
-
-
-                                <!-- ZA -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="6">
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Za
-                                    </span>
-
-                                </label>
-
-
-                                <!-- ZO -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="0">
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Zo
-                                    </span>
-
-                                </label>
-
+                            <div class="mb-1 grid grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-1 text-[10px] font-semibold text-[#9299a3]">
+                                <span>Dag</span>
+                                <span>Starttijd</span>
+                                <span>Eindtijd</span>
                             </div>
 
+                            <div class="space-y-2">
+                                <?php
+                                $workWeekdays = [
+                                    1 => 'Ma',
+                                    2 => 'Di',
+                                    3 => 'Wo',
+                                    4 => 'Do',
+                                    5 => 'Vr',
+                                    6 => 'Za',
+                                    0 => 'Zo',
+                                ];
+                                foreach ($workWeekdays as $dayNumber => $dayLabel):
+                                    $isWorkday = in_array($dayNumber, [1, 2, 3, 4, 5], true);
+                                ?>
+                                    <div class="grid grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2">
+                                        <label class="cursor-pointer">
+                                            <input type="checkbox" class="work-day peer sr-only"
+                                                value="<?= $dayNumber ?>"<?= $isWorkday ? ' checked' : '' ?>>
+                                            <span class="settings-day-label grid h-10 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
+                                                <?= $dayLabel ?>
+                                            </span>
+                                        </label>
+                                        <div>
+                                            <label class="sr-only" for="setting-work-start-<?= $dayNumber ?>">
+                                                Starttijd <?= $dayLabel ?>
+                                            </label>
+                                            <input id="setting-work-start-<?= $dayNumber ?>" type="time"
+                                                class="work-time work-time-start settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-2 py-2.5 text-[12px] font-semibold outline-none transition focus:border-orange"
+                                                data-day="<?= $dayNumber ?>" value="08:30">
+                                        </div>
+                                        <div>
+                                            <label class="sr-only" for="setting-work-end-<?= $dayNumber ?>">
+                                                Eindtijd <?= $dayLabel ?>
+                                            </label>
+                                            <input id="setting-work-end-<?= $dayNumber ?>" type="time"
+                                                class="work-time work-time-end settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-2 py-2.5 text-[12px] font-semibold outline-none transition focus:border-orange"
+                                                data-day="<?= $dayNumber ?>" value="17:00">
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
 
 

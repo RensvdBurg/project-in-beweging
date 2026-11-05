@@ -16,35 +16,10 @@
   }
 
   function isWithinSchedule(settings, date = new Date()) {
-    if (
-      !settings ||
-      settings.workOnly !== true ||
-      !Array.isArray(settings.workDays) ||
-      !settings.workDays.every((day) => Number.isInteger(day) && day >= 0 && day <= 6)
-    ) {
-      return false;
-    }
-
-    const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-    if (!timePattern.test(settings.workStart) || !timePattern.test(settings.workEnd)) {
-      return false;
-    }
-
-    const [startHour, startMinute] = settings.workStart.split(':').map(Number);
-    const [endHour, endMinute] = settings.workEnd.split(':').map(Number);
-    const start = startHour * 60 + startMinute;
-    const end = endHour * 60 + endMinute;
-    const current = date.getHours() * 60 + date.getMinutes();
-    const today = date.getDay();
-    const previousDay = (today + 6) % 7;
-
-    if (start <= end) {
-      return settings.workDays.includes(today) && current >= start && current <= end;
-    }
-
     return (
-      (settings.workDays.includes(today) && current >= start) ||
-      (settings.workDays.includes(previousDay) && current <= end)
+      settings?.workOnly === true &&
+      typeof window.UpMoveSettings?.isActiveNow === 'function' &&
+      window.UpMoveSettings.isActiveNow(date)
     );
   }
 

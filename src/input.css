@@ -39,6 +39,13 @@
   --color-flag-red: oklch(0.54 0.2 27);
 }
 
+#login input:not([type="hidden"]),
+#register input,
+#register select {
+  border: 1px solid #e3e9e6;
+  background-color: #f8faf9;
+}
+
 :root {
   --color-oranje: #ff6b4a;
   --color-groen: #2ec4b6;

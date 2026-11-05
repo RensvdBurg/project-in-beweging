@@ -44,19 +44,14 @@
             'setting-work-only'
         );
 
-    const workStart =
-        document.getElementById(
-            'setting-work-start'
-        );
-
-    const workEnd =
-        document.getElementById(
-            'setting-work-end'
-        );
-
     const workDays =
         document.querySelectorAll(
             '.work-day'
+        );
+
+    const workTimeInputs =
+        document.querySelectorAll(
+            '.work-time'
         );
 
     const workOptions =
@@ -120,88 +115,37 @@
             3,
             4,
             5
-        ]
+        ],
+
+        workSchedule: Array.from(
+            { length: 7 },
+            () => ({ start: '08:30', end: '17:00' })
+        )
 
     };
 
 
 
     Object.assign(settings, initialSettings.settings || {});
+    settings.workSchedule = normalizeWorkSchedule(settings);
+
+    function normalizeWorkSchedule(source) {
+        return Array.from({ length: 7 }, (_, day) => {
+            const hours = source.workSchedule?.[day];
+            return {
+                start: hours?.start || source.workStart || '08:30',
+                end: hours?.end || source.workEnd || '17:00',
+            };
+        });
+    }
 
     window.addEventListener('upmove:settings-loaded', (event) => {
         if (event.detail && typeof event.detail === 'object') {
             Object.assign(settings, event.detail);
+            settings.workSchedule = normalizeWorkSchedule(settings);
             render();
         }
     });
-
-
-
-    /*
-     * ==========================================
-     * WERKDAGEN TEKST
-     * ==========================================
-     */
-
-    function getWorkDaysText() {
-
-        const names = {
-            0: 'Zo',
-            1: 'Ma',
-            2: 'Di',
-            3: 'Wo',
-            4: 'Do',
-            5: 'Vr',
-            6: 'Za'
-        };
-
-
-        /*
-         * Ma t/m Vr
-         */
-        const weekdays = [
-            1,
-            2,
-            3,
-            4,
-            5
-        ];
-
-
-        if (
-            JSON.stringify(
-                [...settings.workDays].sort()
-            ) ===
-            JSON.stringify(
-                [...weekdays].sort()
-            )
-        ) {
-
-            return 'Ma t/m Vr';
-
-        }
-
-
-        /*
-         * Alle dagen
-         */
-        if (
-            settings.workDays.length === 7
-        ) {
-
-            return 'Elke dag';
-
-        }
-
-
-        return settings.workDays
-            .map(
-                day =>
-                names[day]
-            )
-            .join(', ');
-
-    }
 
 
 
@@ -338,14 +282,6 @@
             settings.workOnly;
 
 
-        workStart.value =
-            settings.workStart;
-
-
-        workEnd.value =
-            settings.workEnd;
-
-
         workDays.forEach(
             (input) => {
 
@@ -359,6 +295,15 @@
             }
         );
 
+        workTimeInputs.forEach((input) => {
+            const day = Number(input.dataset.day);
+            const period = input.classList.contains('work-time-start')
+                ? 'start'
+                : 'end';
+            input.value = settings.workSchedule[day][period];
+            input.disabled = !settings.workOnly;
+        });
+
 
 
         /*
@@ -370,12 +315,6 @@
             'opacity-45',
             !settings.workOnly
         );
-
-
-        workStart.disabled = !settings.workOnly;
-
-
-        workEnd.disabled = !settings.workOnly;
 
 
         workDays.forEach(
@@ -393,10 +332,23 @@
          */
 
         if (settings.workOnly) {
-
-            workSummary.textContent =
-                `${getWorkDaysText()} · ${settings.workStart} - ${settings.workEnd}`;
-
+            const dayNames = {
+                0: 'Zo',
+                1: 'Ma',
+                2: 'Di',
+                3: 'Wo',
+                4: 'Do',
+                5: 'Vr',
+                6: 'Za'
+            };
+            workSummary.textContent = settings.workDays
+                .slice()
+                .sort((first, second) => (first + 6) % 7 - (second + 6) % 7)
+                .map((day) => {
+                    const hours = settings.workSchedule[day];
+                    return `${dayNames[day]} ${hours.start} - ${hours.end}`;
+                })
+                .join(' · ');
 
             workSummary.classList.remove(
                 'hidden'
@@ -431,7 +383,10 @@
                 ...settings,
                 workDays: [
                     ...settings.workDays
-                ]
+                ],
+                workSchedule: settings.workSchedule.map(
+                    (hours) => ({ ...hours })
+                )
             });
 
     }
@@ -459,6 +414,9 @@
         const snapshot = {
             ...settings,
             workDays: [...settings.workDays],
+            workSchedule: settings.workSchedule.map(
+                (hours) => ({ ...hours })
+            ),
         };
 
         try {
@@ -508,6 +466,9 @@
                 detail: {
                     ...settings,
                     workDays: [...settings.workDays],
+                    workSchedule: settings.workSchedule.map(
+                        (hours) => ({ ...hours })
+                    ),
                 },
             })
         );
@@ -665,39 +626,16 @@
 
 
 
-    /*
-     * STARTTIJD
-     */
-
-    workStart.addEventListener(
-        'change',
-        () => {
-
-            settings.workStart =
-                workStart.value;
-
+    workTimeInputs.forEach((input) => {
+        input.addEventListener('change', () => {
+            const day = Number(input.dataset.day);
+            const period = input.classList.contains('work-time-start')
+                ? 'start'
+                : 'end';
+            settings.workSchedule[day][period] = input.value;
             save();
-
-        }
-    );
-
-
-
-    /*
-     * EINDTIJD
-     */
-
-    workEnd.addEventListener(
-        'change',
-        () => {
-
-            settings.workEnd =
-                workEnd.value;
-
-            save();
-
-        }
-    );
+        });
+    });
 
 
 

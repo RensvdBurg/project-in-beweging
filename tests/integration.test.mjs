@@ -135,10 +135,17 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
     assert.equal(state().xp, 0);
     assert.equal((await user.post({ action: 'complete_challenge' })).status, 303);
     assert.equal(state().xp, 25);
+    const completedHome = await user.request();
+    assert.match(completedHome.body, /Lekker bezig!/);
+    assert.match(completedHome.body, /completion-button--success/);
+    const otherPage = await user.request('/index.php?screen=leren');
+    assert.match(otherPage.body, /Lekker bezig!/);
     assert.equal((await user.post({ action: 'complete_challenge' })).status, 303);
     assert.equal(state().xp, 25);
     assert.equal(state().completions, 1);
-    assert.match((await user.request()).body, /al voltooid/);
+    const returnedHome = await user.request();
+    assert.match(returnedHome.body, /al voltooid/);
+    assert.match(returnedHome.body, /Lekker bezig!/);
   });
   await t.test('logout protects account and login rejects incorrect passwords', async () => {
     assert.equal((await user.post({ action: 'logout' })).status, 303);

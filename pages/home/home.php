@@ -44,6 +44,7 @@ $challengeIntervalSeconds = 90 * 60;
 $challengeInterval = intdiv(time(), $challengeIntervalSeconds);
 $challengeChangeAt = ($challengeInterval + 1) * $challengeIntervalSeconds;
 $noDifferentChallengeAvailable = false;
+$challengeCompleted = false;
 
 try {
   $db = getDatabaseConnection();
@@ -93,7 +94,6 @@ try {
     }
   }
 
-  $challengeCompleted = false;
   if ($selectedChallenge !== null) {
     $completionStatement = $db->prepare(
       'SELECT 1 FROM challenge_completions
@@ -166,7 +166,7 @@ try {
 }
 
 $escapeActivityFeed = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
-$challengeCompletionSucceeded = str_starts_with($challengeCompletionNotice, 'Opdracht voltooid!');
+$challengeCompletionSucceeded = $challengeCompleted;
 ?>
 <div
   class="screen<?= (($_GET['screen'] ?? 'home') === 'home') ? '' : ' hidden' ?> mx-auto flex min-h-dvh w-full max-w-lg flex-col"

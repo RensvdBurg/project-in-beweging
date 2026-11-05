@@ -11,8 +11,12 @@ session_start();
 $authMessage = $_SESSION['auth_message'] ?? '';
 $authMessageType = $_SESSION['auth_message_type'] ?? 'error';
 $activeAuthMode = $_SESSION['auth_mode'] ?? 'login';
+$registrationValues = $_SESSION['registration_values'] ?? [];
+if (!is_array($registrationValues)) {
+    $registrationValues = [];
+}
 $currentUser = $_SESSION['user'] ?? null;
-unset($_SESSION['auth_message'], $_SESSION['auth_message_type'], $_SESSION['auth_mode']);
+unset($_SESSION['auth_message'], $_SESSION['auth_message_type'], $_SESSION['auth_mode'], $_SESSION['registration_values']);
 
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -29,10 +33,26 @@ if (!in_array($mode, ['login', 'register', 'logout', 'next_challenge', 'complete
     exit('Ongeldige aanvraag.');
 }
 
-$redirectWithMessage = static function (string $message, string $type = 'error') use (&$mode): never {
+$registrationValues = [];
+if ($mode === 'register') {
+    foreach (['email', 'username', 'fullName', 'day', 'month', 'year'] as $field) {
+        $value = $_POST[$field] ?? '';
+        if (is_string($value)) {
+            $registrationValues[$field] = $value;
+        }
+    }
+}
+$registrationInvalidFields = [];
+$redirectWithMessage = static function (string $message, string $type = 'error') use (&$mode, &$registrationValues, &$registrationInvalidFields): never {
     $_SESSION['auth_message'] = $message;
     $_SESSION['auth_message_type'] = $type;
     $_SESSION['auth_mode'] = $mode;
+    if ($mode === 'register') {
+        foreach ($registrationInvalidFields as $field) {
+            unset($registrationValues[$field]);
+        }
+        $_SESSION['registration_values'] = $registrationValues;
+    }
     header('Location: index.php', true, 303);
     exit;
 };
@@ -231,12 +251,15 @@ try {
         $year = filter_var($_POST['year'] ?? null, FILTER_VALIDATE_INT);
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 254) {
+            $registrationInvalidFields = ['email'];
             $redirectWithMessage('Vul een geldig e-mailadres in.');
         }
         if (!preg_match('/\A[A-Za-z0-9_.-]{3,30}\z/', $username)) {
+            $registrationInvalidFields = ['username'];
             $redirectWithMessage('Je gebruikersnaam moet 3 tot 30 tekens bevatten (letters, cijfers, punt, streepje of underscore).');
         }
         if ($fullName === '' || !preg_match('/\A.{1,150}\z/us', $fullName)) {
+            $registrationInvalidFields = ['fullName'];
             $redirectWithMessage('Vul een naam van maximaal 150 tekens in.');
         }
         if (strlen($password) < 8 || strlen($password) > 72) {
@@ -251,6 +274,7 @@ try {
             !checkdate($month, $day, $year) ||
             sprintf('%04d-%02d-%02d', $year, $month, $day) > date('Y-m-d')
         ) {
+            $registrationInvalidFields = ['day', 'month', 'year'];
             $redirectWithMessage('Kies een geldige geboortedatum.');
         }
 
@@ -325,7 +349,18 @@ try {
     }
 
     if ($mode === 'register' && (int) ($exception->errorInfo[1] ?? 0) === 1062) {
-        $redirectWithMessage('Dit e-mailadres of deze gebruikersnaam is al in gebruik.');
+        $duplicateKey = (string) ($exception->errorInfo[2] ?? '');
+        if (str_contains($duplicateKey, 'users_email_unique')) {
+            $registrationInvalidFields = ['email'];
+            $message = 'Dit e-mailadres is al in gebruik.';
+        } elseif (str_contains($duplicateKey, 'users_username_unique')) {
+            $registrationInvalidFields = ['username'];
+            $message = 'Deze gebruikersnaam is al in gebruik.';
+        } else {
+            $registrationInvalidFields = ['email', 'username'];
+            $message = 'Dit e-mailadres of deze gebruikersnaam is al in gebruik.';
+        }
+        $redirectWithMessage($message);
     }
 
     if (

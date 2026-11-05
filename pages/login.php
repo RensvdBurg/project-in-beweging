@@ -75,7 +75,7 @@ $currentYear = (int) date('Y');
                 <div class="flex flex-col gap-[15px]">
                     <div>
                         <label class="sr-only" for="registerEmail">E-mailadres</label>
-                        <input id="registerEmail" required type="email" name="email" autocomplete="email" placeholder="E-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                        <input id="registerEmail" required type="email" name="email" autocomplete="email" value="<?= htmlspecialchars($registrationValues['email'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="E-mailadres" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                         <p class="mt-1 pl-[14px] text-[10px] font-medium text-card-foreground">Je ontvangt mogelijk meldingen van ons.</p>
                     </div>
                     <label class="sr-only" for="registerPassword">Wachtwoord</label>
@@ -87,31 +87,31 @@ $currentYear = (int) date('Y');
                         <div class="flex gap-[12px]">
                             <label class="sr-only" for="birthDay">Dag</label>
                             <select id="birthDay" required name="day" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
-                                <option value="" disabled selected>Dag</option>
+                                <option value="" disabled <?= empty($registrationValues['day']) ? 'selected' : '' ?>>Dag</option>
                                 <?php for ($day = 1; $day <= 31; $day++): ?>
-                                    <option value="<?= $day ?>"><?= $day ?></option>
+                                    <option value="<?= $day ?>" <?= ($registrationValues['day'] ?? '') === (string) $day ? 'selected' : '' ?>><?= $day ?></option>
                                 <?php endfor; ?>
                             </select>
                             <label class="sr-only" for="birthMonth">Maand</label>
                             <select id="birthMonth" required name="month" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
-                                <option value="" disabled selected>Maand</option>
+                                <option value="" disabled <?= empty($registrationValues['month']) ? 'selected' : '' ?>>Maand</option>
                                 <?php foreach ($months as $monthNumber => $monthName): ?>
-                                    <option value="<?= $monthNumber ?>"><?= htmlspecialchars($monthName, ENT_QUOTES, 'UTF-8') ?></option>
+                                    <option value="<?= $monthNumber ?>" <?= ($registrationValues['month'] ?? '') === (string) $monthNumber ? 'selected' : '' ?>><?= htmlspecialchars($monthName, ENT_QUOTES, 'UTF-8') ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <label class="sr-only" for="birthYear">Jaar</label>
                             <select id="birthYear" required name="year" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
-                                <option value="" disabled selected>Jaar</option>
+                                <option value="" disabled <?= empty($registrationValues['year']) ? 'selected' : '' ?>>Jaar</option>
                                 <?php for ($year = $currentYear; $year >= $currentYear - 110; $year--): ?>
-                                    <option value="<?= $year ?>"><?= $year ?></option>
+                                    <option value="<?= $year ?>" <?= ($registrationValues['year'] ?? '') === (string) $year ? 'selected' : '' ?>><?= $year ?></option>
                                 <?php endfor; ?>
                             </select>
                         </div>
                     </fieldset>
                     <label class="sr-only" for="fullName">Volledige naam</label>
-                    <input id="fullName" required name="fullName" autocomplete="name" placeholder="Volledige naam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <input id="fullName" required name="fullName" autocomplete="name" value="<?= htmlspecialchars($registrationValues['fullName'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="Volledige naam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                     <label class="sr-only" for="username">Gebruikersnaam</label>
-                    <input id="username" required name="username" autocomplete="username" placeholder="Gebruikersnaam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
+                    <input id="username" required name="username" autocomplete="username" value="<?= htmlspecialchars($registrationValues['username'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="Gebruikersnaam" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                 </div>
                 <?php if ($authMessage !== '' && $activeAuthMode === 'register'): ?>
                     <div id="registerStatus" role="<?= $authMessageType === 'success' ? 'status' : 'alert' ?>" aria-live="<?= $authMessageType === 'success' ? 'polite' : 'assertive' ?>" class="flex items-start gap-3 rounded-[16px] border p-3 text-left <?= $authMessageType === 'success' ? 'border-[#b8ddd4] bg-[#edf7f4] text-[#17685b]' : 'border-[#f2c9c7] bg-[#fff3f2] text-flag-red' ?>">

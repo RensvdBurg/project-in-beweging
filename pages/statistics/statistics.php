@@ -62,13 +62,13 @@ $userId = $_SESSION['user']['id']
             <section class="py-3 flex gap-4 items-center justify-center">
                 <!-- gemiddelde & reeks -->
                 <div class="rounded-2xl bg-white p-4 grow">
-                    <p class="text-[12px] text-[#d8d8d8]">Dagelijks gemiddelde</p>
+                    <p class="text-[12px] text-[#9299a3]">Dagelijks gemiddelde</p>
                     <p class="text-[24px] font-bold">16.4 mins</p>
                     <p class="text-[12px]">12% t.o.v. vorige week</p>
                     <!-- Gemiddelde -->
                 </div>
                 <div class="rounded-2xl bg-white p-4 grow">
-                    <p class="text-[12px] text-[#d8d8d8]">Langste Reeks</p>
+                    <p class="text-[12px] text-[#9299a3]">Langste Reeks</p>
                     <p class="text-[24px] font-bold">12 Dagen</p>
                     <p class="text-[12px]">Doel: 15 dagen</p>
                     <!-- Reeks -->
@@ -99,7 +99,7 @@ $userId = $_SESSION['user']['id']
                         </div>
                         <div class="grow">
                             <p class="text-[14px] font-bold">Eerste Stap</p>
-                            <p class="text-[12px] text-[#d8d8d8]">Eerste opsta-pauze</p>
+                            <p class="text-[12px] text-[#9299a3]">Eerste opsta-pauze</p>
                         </div>
                         <p class="text-[16px] text-[#2ec4b6] font-bold w-fit">Behaald</p>
                     </div>

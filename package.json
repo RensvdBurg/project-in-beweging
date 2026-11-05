@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@tailwindcss/cli": "^4.3.3",
+    "driver.js": "^1.10.2",
     "iconoir": "^7.12.1",
     "tailwindcss": "^4.3.3"
   },
@@ -10,7 +11,7 @@
     "check:build": "node scripts/check-build.mjs",
     "lint:php": "node scripts/lint-php.mjs",
     "test": "npm run test:templates && npm run test:smoke && npm run test:integration",
-    "assets": "node scripts/copy-icons.mjs",
+    "assets": "node scripts/copy-icons.mjs && node scripts/copy-driver.mjs",
     "predev": "npm run assets",
     "test:smoke": "node --test tests/login-smoke.test.mjs",
     "test:integration": "node --test tests/integration.test.mjs",

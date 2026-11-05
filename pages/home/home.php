@@ -182,7 +182,7 @@ $challengeCompletionSucceeded = $challengeCompleted;
 <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
-    <header class="home-motion mb-4 flex items-start justify-between gap-3 sm:mb-5">
+    <header id="home-tour-welcome" class="home-motion mb-4 flex items-start justify-between gap-3 sm:mb-5">
       <div class="min-w-0">
         <p class="mb-0.5 text-sm font-medium text-muted">Welkom terug</p>
         <h1 class="text-2xl font-extrabold tracking-tight sm:text-[1.75rem]">
@@ -230,7 +230,7 @@ $challengeCompletionSucceeded = $challengeCompleted;
 
 
 
-    <section class="home-motion home-card-interactive mb-3.5 rounded-[22px] bg-surface p-5 shadow-card sm:p-7 sm:pb-5" aria-label="Dagelijkse voortgang">
+    <section id="home-tour-challenge" class="home-motion home-card-interactive mb-3.5 rounded-[22px] bg-surface p-5 shadow-card sm:p-7 sm:pb-5" aria-label="Dagelijkse voortgang">
 
 
       <div class="relative mx-auto mb-5 h-[190px] w-[190px] sm:mb-6 sm:h-[210px] sm:w-[210px]">
@@ -319,7 +319,7 @@ $challengeCompletionSucceeded = $challengeCompleted;
     </section>
 
 
-    <section class="home-motion home-card-interactive mb-5 flex items-center gap-3 rounded-[18px] border-2 border-teal bg-surface p-3 sm:p-3.5">
+    <section id="home-tour-timer" class="home-motion home-card-interactive mb-5 flex items-center gap-3 rounded-[18px] border-2 border-teal bg-surface p-3 sm:p-3.5">
 
       <div class="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-teal-soft" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -449,4 +449,10 @@ $challengeCompletionSucceeded = $challengeCompleted;
   defer></script>
 <script
   src="/project-in-beweging/assets/js/activity-interactions.js?v=<?= filemtime(__DIR__ . '/../../assets/js/activity-interactions.js') ?>"
+  defer></script>
+<script
+  src="/project-in-beweging/assets/vendor/driver.js.iife.js?v=<?= filemtime(__DIR__ . '/../../assets/vendor/driver.js.iife.js') ?>"
+  defer></script>
+<script
+  src="/project-in-beweging/assets/js/home-tour.js?v=<?= filemtime(__DIR__ . '/../../assets/js/home-tour.js') ?>"
   defer></script>

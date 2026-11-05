@@ -30,6 +30,10 @@
       history.replaceState({}, "", url);
     }
 
+    window.dispatchEvent(new CustomEvent("upmove:screen-changed", {
+      detail: { screenName },
+    }));
+
     return true;
   }
 

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "../node_modules/driver.js/dist/driver.css";
 
 @source "../*.php";
 @source "../pages";
@@ -375,6 +376,153 @@ html.upmove-dark .account-avatar {
 
 .leaderboard-podium-card--3 {
   min-height: 10rem;
+}
+
+.driver-popover.home-tour-popover {
+  --home-tour-surface: #ffffff;
+  --home-tour-ink: #1a1a1a;
+  --home-tour-muted: #737984;
+  --home-tour-border: #eceef2;
+  max-width: min(21rem, calc(100vw - 2rem));
+  padding: 1.375rem;
+  border: 1px solid var(--home-tour-border);
+  border-radius: 1.25rem;
+  background: var(--home-tour-surface);
+  color: var(--home-tour-ink);
+  font-family: "Montserrat", sans-serif;
+  box-shadow: 0 16px 40px rgb(20 24 40 / 20%);
+}
+
+.driver-popover.home-tour-popover::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.3rem;
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: linear-gradient(90deg, #ff6b4a 0%, #ff8a62 55%, #5ecfc0 100%);
+  content: "";
+}
+
+.home-tour-popover .driver-popover-title {
+  padding-right: 1.75rem;
+  color: var(--home-tour-ink);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.home-tour-popover .driver-popover-description {
+  margin-top: 0.5rem;
+  color: var(--home-tour-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.home-tour-popover .driver-popover-close-btn {
+  top: 0.8rem;
+  right: 0.8rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  color: var(--home-tour-muted);
+  font-size: 1.25rem;
+}
+
+.home-tour-popover .driver-popover-close-btn:hover,
+.home-tour-popover .driver-popover-close-btn:focus-visible {
+  background: #ffe8e1;
+  color: #e85c3d;
+}
+
+.home-tour-popover .driver-popover-footer {
+  margin-top: 1.125rem;
+}
+
+.home-tour-popover .driver-popover-progress-text {
+  color: var(--home-tour-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.home-tour-popover .driver-popover-footer-btn {
+  min-height: 2.25rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--home-tour-border);
+  border-radius: 0.75rem;
+  background: var(--home-tour-surface);
+  color: var(--home-tour-ink);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.home-tour-popover .driver-popover-footer-btn:hover,
+.home-tour-popover .driver-popover-footer-btn:focus-visible {
+  border-color: #5ecfc0;
+  background: #e8faf7;
+}
+
+.home-tour-popover .driver-popover-next-btn,
+.home-tour-popover .driver-popover-done-btn {
+  border-color: #ff6b4a;
+  background: #ff6b4a;
+  color: #ffffff;
+}
+
+.home-tour-popover .driver-popover-next-btn:hover,
+.home-tour-popover .driver-popover-next-btn:focus-visible,
+.home-tour-popover .driver-popover-done-btn:hover,
+.home-tour-popover .driver-popover-done-btn:focus-visible {
+  border-color: #e85c3d;
+  background: #e85c3d;
+}
+
+.home-tour-popover .driver-popover-arrow {
+  border-color: var(--home-tour-surface);
+}
+
+.home-tour-popover .driver-popover-arrow-side-left {
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-right-color: transparent;
+}
+
+.home-tour-popover .driver-popover-arrow-side-right {
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+}
+
+.home-tour-popover .driver-popover-arrow-side-top {
+  border-top-color: transparent;
+  border-left-color: transparent;
+  border-right-color: transparent;
+}
+
+.home-tour-popover .driver-popover-arrow-side-bottom {
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  border-right-color: transparent;
+}
+
+html.upmove-dark .driver-popover.home-tour-popover {
+  --home-tour-surface: #202630;
+  --home-tour-ink: #f4f5f7;
+  --home-tour-muted: #a3acba;
+  --home-tour-border: #3c4654;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 40%);
+}
+
+html.upmove-dark .home-tour-popover .driver-popover-close-btn:hover,
+html.upmove-dark .home-tour-popover .driver-popover-close-btn:focus-visible {
+  background: #382823;
+  color: #ff8a62;
+}
+
+html.upmove-dark .home-tour-popover .driver-popover-footer-btn:hover,
+html.upmove-dark .home-tour-popover .driver-popover-footer-btn:focus-visible {
+  border-color: #5ecfc0;
+  background: #203a37;
 }
 
 .leaderboard-podium-rank {

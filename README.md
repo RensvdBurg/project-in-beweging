@@ -91,15 +91,18 @@ In PowerShell kan PHP worden geselecteerd met:
 $env:PHP_BINARY = 'C:\xampp\php\php.exe'
 ```
 
-`npm run dev` kopieert eerst de Iconoir-assets en start vervolgens de CSS-watcher.
+`npm run dev` kopieert eerst de browserassets en start vervolgens de CSS-watcher.
 `npm run build` bouwt eenmalig geminificeerde Tailwind-CSS en kopieert de vastgelegde
-Iconoir-versie met licentie. De applicatie laadt Iconoir lokaal in plaats van vanaf
-een veranderlijke CDN-mainbranch. `check:build` controleert alle gegenereerde assets.
+Iconoir-versie met licentie en de Driver.js-browserbundel. De applicatie laadt Iconoir
+lokaal in plaats van vanaf een veranderlijke CDN-mainbranch. `check:build` controleert
+alle gegenereerde assets.
 `node_modules` werd eerder al gevolgd voordat de ignore-regel bestond; deze bestanden
 zijn nu gericht uit de index verwijderd. De lokale bestanden blijven behouden.
 Ook `css/output.css` wordt voortaan gegenereerd. Commit package.json, package-lock.json
 en src/input.css; voer na een schone checkout altijd `npm ci` en `npm run build` uit.
-Lever bij toekomstige deployment de gegenereerde CSS en Iconoir-licentie mee.
+Lever bij toekomstige deployment de gegenereerde CSS, Iconoir-licentie en Driver.js-
+browserbundel mee. De Driver.js-rondleiding op Home start de eerste keer voor een
+gebruiker in die browser en wordt daarna lokaal onthouden.
 
 ### Databasebaseline
 

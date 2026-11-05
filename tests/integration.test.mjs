@@ -105,17 +105,17 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
     ...legacySettings,
     workSchedule: Array.from({ length: 7 }, () => ({ start: '09:00', end: '16:00' })),
   };
+  const perDaySettings = {
+    ...legacySettingsWithSchedule,
+    workSchedule: legacySettingsWithSchedule.workSchedule.map((hours, day) =>
+      day === 3 ? { start: '10:00', end: '18:30' } : hours),
+  };
   await t.test('settings persist and invalid CSRF cannot change them', async () => {
     assert.equal((await user.settings(legacySettings)).status, 200);
     assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, legacySettingsWithSchedule);
     assert.equal((await user.settings({ frequency: 120 }, false)).status, 400);
     assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, legacySettingsWithSchedule);
 
-    const perDaySettings = {
-      ...legacySettingsWithSchedule,
-      workSchedule: legacySettingsWithSchedule.workSchedule.map((hours, day) =>
-        day === 3 ? { start: '10:00', end: '18:30' } : hours),
-    };
     assert.equal((await user.settings(perDaySettings)).status, 200);
     assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, perDaySettings);
   });
@@ -168,7 +168,7 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
     assert.equal((await user.request('/pages/settings/settings-api.php')).status, 401);
     await user.post({ action: 'login', email: registration.email, password: registration.password });
     assert.equal((await user.request('/pages/settings/settings-api.php')).status, 200);
-    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, settings);
+    assert.deepEqual(JSON.parse((await user.request('/pages/settings/settings-api.php')).body).settings, perDaySettings);
   });
   await browserChecks(t, `http://127.0.0.1:${port}`);
   await extendedChecks({ t, user, client, db, state, env, php, sessions, port });

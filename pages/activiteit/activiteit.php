@@ -188,8 +188,10 @@ try {
     <?php require __DIR__ . '/../../components/header.php'; ?>
 </head>
 <body>
-    <main class="mx-auto min-h-dvh w-full max-w-lg overflow-y-auto scroll-smooth px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] motion-reduce:scroll-auto sm:px-6">
-        <header class="mb-5 pt-2">
+    <main
+        class="mx-auto min-h-dvh w-full max-w-lg overflow-y-auto scroll-smooth px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] motion-reduce:scroll-auto sm:px-6"
+        data-activity-user-id="<?= $userId ?>">
+        <header id="activity-tour-intro" class="mb-5 pt-2">
             <p class="mb-1 text-sm font-bold text-orange">Jouw voortgang</p>
             <h1 class="text-2xl font-extrabold tracking-tight">Activiteiten</h1>
             <p class="mt-1 text-sm text-muted">Deel wat je hebt gedaan, van een hardlooprondje tot een nieuwe sportieve mijlpaal.</p>
@@ -207,7 +209,7 @@ try {
             </p>
         <?php endif; ?>
 
-        <form method="post" enctype="multipart/form-data" class="mb-6 space-y-4 rounded-[22px] bg-surface p-4 shadow-card sm:p-5">
+        <form id="activity-tour-form" method="post" enctype="multipart/form-data" class="mb-6 space-y-4 rounded-[22px] bg-surface p-4 shadow-card sm:p-5">
             <input type="hidden" name="csrf_token" value="<?= $escape($_SESSION['csrf_token']) ?>">
 
             <div>
@@ -254,7 +256,7 @@ try {
             </button>
         </form>
 
-        <section aria-labelledby="activity-list-title">
+        <section id="activity-tour-list" aria-labelledby="activity-list-title">
             <h2 id="activity-list-title" class="mb-3 text-lg font-extrabold tracking-tight">Jouw activiteiten</h2>
 
             <?php if ($activityLoadError): ?>
@@ -262,7 +264,7 @@ try {
                     Je activiteiten konden niet worden geladen. Probeer het later opnieuw.
                 </p>
             <?php elseif ($activities === []): ?>
-                <p class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card">
+                <p id="activity-tour-empty-state" class="rounded-[18px] bg-surface p-4 text-sm font-semibold text-muted shadow-card">
                     Je hebt nog geen activiteiten gedeeld. Voeg hierboven je eerste activiteit toe.
                 </p>
             <?php else: ?>
@@ -307,5 +309,7 @@ try {
 
     <?php require __DIR__ . '/../../components/footer.php'; ?>
     <script src="/project-in-beweging/assets/js/activity-interactions.js?v=<?= filemtime(__DIR__ . '/../../assets/js/activity-interactions.js') ?>" defer></script>
+    <script src="/project-in-beweging/assets/vendor/driver.js.iife.js?v=<?= filemtime(__DIR__ . '/../../assets/vendor/driver.js.iife.js') ?>" defer></script>
+    <script src="/project-in-beweging/assets/js/activity-tour.js?v=<?= filemtime(__DIR__ . '/../../assets/js/activity-tour.js') ?>" defer></script>
 </body>
 </html>

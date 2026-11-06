@@ -44,6 +44,8 @@
         element: '.activity-nav-button',
         title: 'Activiteiten',
         description: 'Bekijk en deel activiteiten met anderen.',
+        side: 'bottom',
+        align: 'end',
       },
       {
         element: '#activity-feed',
@@ -59,9 +61,9 @@
 
     const steps = selectors
       .filter(({ element }) => document.querySelector(element))
-      .map(({ element, title, description }) => ({
+      .map(({ element, title, description, side, align }) => ({
         element,
-        popover: { title, description },
+        popover: { title, description, side, align },
       }));
 
     if (steps.length === 0) {

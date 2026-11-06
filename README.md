@@ -298,3 +298,18 @@ hoofdletters, meerdere regels, ongequote attributen en gecodeerde JavaScript-URL
 De PHP-tokenizer scheidt PHP-expressies van letterlijk HTML in templates. HTML-comments
 worden genegeerd. Dynamisch met PHP opgebouwde HTML is geen letterlijke template en
 vraagt aanvullend code-review; deze controle is geen algemene PHP-code-analyse.
+
+
+# ngrok
+
+1. winget install ngrok -s msstore
+2. ngrok config add-authtoken JOUW_TOKEN
+3. notepad "%USERPROFILE%\ngrok-policy.yml"
+4. on_http_request:
+  - actions:
+      - type: basic-auth
+        config:
+          credentials:
+            - "tester:KiesHierEenSterkUniekWachtwoord"
+5. ngrok http 80 --traffic-policy-file "%USERPROFILE%\ngrok-policy.yml"
+6. https://legume-caddy-judge.ngrok-free.dev/project-in-beweging/index.php

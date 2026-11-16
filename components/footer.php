@@ -91,7 +91,10 @@ function footerItemClass(bool $active): string
 
 
     <!-- LEREN -->
-    <a href="/project-in-beweging/?screen=leren"
+    <a href="<?= $isSettingsPage || $isStatisticsPage
+      ? '/project-in-beweging/?screen=leren&amp;transition=none'
+      : '/project-in-beweging/?screen=leren' ?>"
+      <?= $isSettingsPage || $isStatisticsPage ? 'data-disable-page-transition' : '' ?>
       class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'leren') ?>" data-screen="leren">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path

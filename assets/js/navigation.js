@@ -27,6 +27,7 @@
     if (updateUrl) {
       const url = new URL(window.location.href);
       url.searchParams.set("screen", screenName);
+      url.searchParams.delete("transition");
       history.replaceState({}, "", url);
     }
 
@@ -36,6 +37,12 @@
   navItems.forEach((item) => {
     item.addEventListener("click", (event) => {
       const screenName = item.dataset.screen;
+      if (item.hasAttribute("data-disable-page-transition")) {
+        document
+          .querySelectorAll('link[href*="page-transition.css"]')
+          .forEach((stylesheet) => stylesheet.remove());
+      }
+
       if (document.getElementById(`screen-${screenName}`)) {
         event.preventDefault();
         openScreen(screenName);

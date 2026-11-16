@@ -11,6 +11,7 @@ if (empty($_SESSION['user'])) {
 }
 
 $pageTitle = 'Statistieken | UpMove';
+$enableSettingsPageTransitions = true;
 
 ?>
 
@@ -23,7 +24,7 @@ $pageTitle = 'Statistieken | UpMove';
 </head>
 <body class="min-h-dvh bg-app-bg font-sans text-ink antialiased">
     <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
-        <main class="flex-1 px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
+        <main class="upmove-statistics flex-1 px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
             <header class="mb-5 pt-2">
                 <h1 class="text-xl font-extrabold tracking-tight">
                     Activiteitsstatistieken

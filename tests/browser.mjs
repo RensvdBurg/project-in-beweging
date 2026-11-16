@@ -13,7 +13,7 @@ export async function browserChecks(t, base) {
         try {
           const page = await context.newPage();
           const errors = [], brokenAssets = [];
-          page.on('pageerror', error => errors.push(error.message));
+          page.on('pageerror', error => errors.push(`${page.url()}: ${error.message}`));
           page.on('response', response => { if (response.url().startsWith(base) && response.status() >= 400) brokenAssets.push(response.url()); });
           await page.goto(`${base}/project-in-beweging/index.php`);
           await page.locator('#loginForm').waitFor({ state: 'visible' });
@@ -44,6 +44,45 @@ export async function browserChecks(t, base) {
           assert.equal(await page.locator('#challenge-list > li:visible').count(), 1);
           await page.locator('nav a[data-screen="ranglijst"]').click();
           await page.locator('#screen-ranglijst').waitFor({ state: 'visible' });
+
+          await Promise.all([
+            page.waitForURL('**/pages/settings/settings.php'),
+            page.locator('nav a[href*="settings.php"]').click(),
+          ]);
+          await page.waitForTimeout(600);
+          errors.length = 0;
+          const learnLink = page.locator('nav a[data-screen="leren"]');
+          assert.match(await learnLink.getAttribute('href'), /transition=none/);
+          await learnLink.click();
+          await page.locator('#screen-leren').waitFor({ state: 'visible' });
+          await page.waitForTimeout(50);
+          assert.deepEqual(errors, []);
+          assert.equal(await page.evaluate(() => new URL(location.href).searchParams.get('transition')), 'none');
+          assert.equal(await page.locator('link[href*="page-transition.css"]').count(), 0);
+
+          await page.locator('nav a[data-screen="ranglijst"]').click();
+          await page.locator('#screen-ranglijst').waitFor({ state: 'visible' });
+          assert.equal(await page.evaluate(() => new URL(location.href).searchParams.has('transition')), false);
+          await page.waitForTimeout(600);
+
+          await Promise.all([
+            page.waitForURL('**/pages/statistics/statistics.php'),
+            page.locator('nav a[data-screen="stats"]').click(),
+          ]);
+          const statisticsHeader = page.locator('main.upmove-statistics > header');
+          await statisticsHeader.waitFor({ state: 'visible' });
+          assert.equal(await statisticsHeader.evaluate(element => getComputedStyle(element).animationName), 'settings-section-enter');
+          await page.waitForTimeout(600);
+          errors.length = 0;
+
+          const statisticsLearnLink = page.locator('nav a[data-screen="leren"]');
+          assert.match(await statisticsLearnLink.getAttribute('href'), /transition=none/);
+          await statisticsLearnLink.click();
+          await page.locator('#screen-leren').waitFor({ state: 'visible' });
+          await page.waitForTimeout(50);
+          assert.deepEqual(errors, []);
+          assert.equal(await page.locator('link[href*="page-transition.css"]').count(), 0);
+
           assert.deepEqual(errors, []);
           assert.deepEqual(brokenAssets, []);
         } finally { await context.close(); }

@@ -4,12 +4,18 @@ require __DIR__ . '/pages/auth.php';
 $isLoggedIn = $currentUser !== null;
 $requestedScreen = $_GET['screen'] ?? 'home';
 $requestedTransition = $_GET['transition'] ?? null;
+// Keep view transitions enabled, but suppress the slide animation for this route.
+$isSettingsToLearnNavigation = $isLoggedIn
+    && is_string($requestedScreen)
+    && $requestedScreen === 'leren'
+    && $requestedTransition === 'none';
 $enableLearnPageTransitions = $isLoggedIn
     && is_string($requestedScreen)
-    && $requestedScreen === 'leren';
+    && $requestedScreen === 'leren'
+    && !$isSettingsToLearnNavigation;
 $isReturningToLearnPage = $enableLearnPageTransitions
     && $requestedTransition === 'back';
-$enableSettingsPageTransitions = $isLoggedIn;
+$enableSettingsPageTransitions = $isLoggedIn && !$isSettingsToLearnNavigation;
 $pageTransitionClass = $isReturningToLearnPage
     ? 'learn-page-transition-back'
     : '';

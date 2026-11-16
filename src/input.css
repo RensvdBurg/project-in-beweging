@@ -973,23 +973,28 @@ html.upmove-dark #screen-home .completion-feedback--success {
 
 .upmove-settings > header,
 .upmove-account > header,
+.upmove-statistics > header,
 .upmove-settings > section,
-.upmove-account > section {
+.upmove-account > section,
+.upmove-statistics > section {
   animation: settings-section-enter 420ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
 }
 
 .upmove-settings > section:nth-of-type(2),
-.upmove-account > section:nth-of-type(2) {
+.upmove-account > section:nth-of-type(2),
+.upmove-statistics > section:nth-of-type(2) {
   animation-delay: 60ms;
 }
 
 .upmove-settings > section:nth-of-type(3),
-.upmove-account > section:nth-of-type(3) {
+.upmove-account > section:nth-of-type(3),
+.upmove-statistics > section:nth-of-type(3) {
   animation-delay: 120ms;
 }
 
 .upmove-settings > section:nth-of-type(4),
-.upmove-account > section:nth-of-type(4) {
+.upmove-account > section:nth-of-type(4),
+.upmove-statistics > section:nth-of-type(4) {
   animation-delay: 180ms;
 }
 
@@ -1030,8 +1035,10 @@ html.settings-theme-transition *::after {
 @media (prefers-reduced-motion: reduce) {
   .upmove-settings > header,
   .upmove-account > header,
+  .upmove-statistics > header,
   .upmove-settings > section,
-  .upmove-account > section {
+  .upmove-account > section,
+  .upmove-statistics > section {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;

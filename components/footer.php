@@ -14,6 +14,10 @@ $isActivityPage = str_contains(
   $currentPath,
   '/pages/activiteit/activiteit.php'
 );
+$isStatisticsPage = str_contains(
+  $currentPath,
+  '/pages/statistics/statistics.php'
+);
 
 $allowedScreens = [
   'home',
@@ -24,7 +28,9 @@ $allowedScreens = [
 
 $currentScreen = $_GET['screen'] ?? ($isChallengeDescriptionPage ? 'leren' : 'home');
 
-if ($isActivityPage) {
+if ($isStatisticsPage) {
+  $currentScreen = 'stats';
+} elseif ($isActivityPage) {
   $currentScreen = '';
 } elseif (!in_array($currentScreen, $allowedScreens, true)) {
   $currentScreen = 'home';
@@ -98,10 +104,22 @@ function footerItemClass(bool $active): string
 
 
     <!-- STATISTIEKEN -->
-    <a href="/project-in-beweging/?screen=stats"
-      class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'stats') ?>" data-screen="stats">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M5 19V11M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    <a
+      href="/project-in-beweging/pages/statistics/statistics.php"
+      class="<?= footerItemClass(!$isSettingsPage && $currentScreen === 'stats') ?>"
+      data-screen="stats"
+      <?= $isStatisticsPage ? 'aria-current="page"' : '' ?>>
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true">
+        <path
+          d="M5 19V11M12 19V5M19 19v-7"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round" />
       </svg>
 
       <span>Statistieken</span>

@@ -34,6 +34,8 @@ $userId = $_SESSION['user']['id']
         content="#f7f8fa"
         id="theme-color">
 
+    <script defer src="/project-in-beweging/assets/js/page-entry.js?v=<?= filemtime(__DIR__ . '/../../assets/js/page-entry.js') ?>"></script>
+
     <title>Statistieken | UpMove</title>
 
 

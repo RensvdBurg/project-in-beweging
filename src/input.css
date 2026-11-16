@@ -72,12 +72,14 @@ body {
   min-height: 100%;
 }
 
-html {
+html,
+main {
   scroll-behavior: smooth;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
+  html,
+  main {
     scroll-behavior: auto;
   }
 }

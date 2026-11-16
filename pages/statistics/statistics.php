@@ -10,10 +10,7 @@ if (empty($_SESSION['user'])) {
     exit;
 }
 
-$userId = $_SESSION['user']['id']
-        ?? $_SESSION['user']['email']
-        ?? $_SESSION['user']['full_name']
-        ?? 'user';
+$pageTitle = 'Statistieken | UpMove';
 
 ?>
 
@@ -22,109 +19,61 @@ $userId = $_SESSION['user']['id']
 <html lang="nl">
 
 <head>
-
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-
-    <meta
-        name="theme-color"
-        content="#f7f8fa"
-        id="theme-color">
-
-    <title>Statistieken | UpMove</title>
-
-
-    <!-- Tailwind CSS -->
-    <link
-        rel="stylesheet"
-        href="/project-in-beweging/css/output.css">
+    <?php require __DIR__ . '/../../components/header.php'; ?>
 </head>
-<body class="min-h-dvh bg-[#f7f8fa] text-[#20242a] antialiased">
+<body class="min-h-dvh bg-app-bg font-sans text-ink antialiased">
     <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
-        <header class="relative mb-6 mx-6 flex min-h-16 items-center justify-center">
-            <h1 class="text-[18px] font-extrabold tracking-tight">
-                Activiteitsstatistieken
-            </h1>
-            <button type="button"
-                    class="settings-card absolute right-0 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm transition active:scale-95"
-                    aria-label="Meldingen">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor"
-                          stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-                    <path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-                </svg>
-            </button>
-        </header>
-        <main class="px-6">
-            <section class="py-3 flex gap-4 items-center justify-center">
-                <!-- gemiddelde & reeks -->
-                <div class="rounded-2xl bg-white p-4 grow">
-                    <p class="text-[12px] text-[#9299a3]">Dagelijks gemiddelde</p>
-                    <p class="text-[24px] font-bold">16.4 mins</p>
-                    <p class="text-[12px]">12% t.o.v. vorige week</p>
-                    <!-- Gemiddelde -->
+        <main class="flex-1 px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
+            <header class="mb-5 pt-2">
+                <h1 class="text-xl font-extrabold tracking-tight">
+                    Activiteitsstatistieken
+                </h1>
+                <p class="mt-1 text-sm text-muted">Bekijk je voortgang en behaalde badges.</p>
+            </header>
+
+            <!-- Tracker-hooks voor statistieken, grafiek en badges. -->
+            <section class="flex gap-3 py-3" aria-label="Samenvatting">
+                <div class="settings-card min-w-0 flex-1 rounded-2xl bg-surface p-4 shadow-card">
+                    <p class="text-xs text-muted">Dagelijks gemiddelde</p>
+                    <p class="mt-1 text-xl font-bold"><output data-stat="daily-average-minutes">—</output> min</p>
+                    <p class="mt-1 text-xs text-muted" data-stat="weekly-change">Nog geen gegevens</p>
                 </div>
-                <div class="rounded-2xl bg-white p-4 grow">
-                    <p class="text-[12px] text-[#9299a3]">Langste Reeks</p>
-                    <p class="text-[24px] font-bold">12 Dagen</p>
-                    <p class="text-[12px]">Doel: 15 dagen</p>
-                    <!-- Reeks -->
+                <div class="settings-card min-w-0 flex-1 rounded-2xl bg-surface p-4 shadow-card">
+                    <p class="text-xs text-muted">Langste reeks</p>
+                    <p class="mt-1 text-xl font-bold"><output data-stat="longest-streak-days">—</output> dagen</p>
+                    <p class="mt-1 text-xs text-muted">
+                        Doel: <output data-stat="streak-goal-days">—</output> dagen
+                    </p>
                 </div>
             </section>
-            <!-- Graph -->
-            <section class="py-3">
-                <div class="rounded-2xl bg-white p-5">
-                    <p class="text-[16px] font-bold">Wekelijkse bewegingsminuten</p>
-                    <div class="pt-5">
-                        <!-- Graph-->
-                    </div>
-                </div>
-            </section>
-            <!-- Badges -->
-            <section class="py-3">
 
-                <p class="text-[16px] font-bold">Behaalde badges</p>
-
-                <div class="flex-col py-3">
-                    <div class="flex items-center p-3 bg-white rounded-2xl gap-3">
-                        <div class="w-12 h-12 rounded-2xl bg-[#fff0ec] flex items-center justify-center">
-                            <svg color="#ff6b4a" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor"
-                                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-                                <path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-                            </svg>
-                        </div>
-                        <div class="grow">
-                            <p class="text-[14px] font-bold">Eerste Stap</p>
-                            <p class="text-[12px] text-[#9299a3]">Eerste opsta-pauze</p>
-                        </div>
-                        <p class="text-[16px] text-[#2ec4b6] font-bold w-fit">Behaald</p>
-                    </div>
-                </div>
-
-                <p class="text-[16px] font-bold">Vergrendelde badges</p>
-
-                <div class="flex-col py-3">
-                    <div class="flex items-center p-3 bg-white rounded-2xl gap-3">
-                        <div class="w-12 h-12 rounded-2xl bg-[#f9fafc] flex items-center justify-center">
-                            <svg color="#9ca3af" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor"
-                                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-                                <path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-                            </svg>
-                        </div>
-                        <div class="grow">
-                            <p class="text-[14px] text-muted font-bold">Zitverslagen</p>
-                            <p class="text-[12px] text-[#9299a3]">100 keer opgestaan</p>
-                        </div>
-                        <p class="text-[16px] text-muted font-bold w-fit">Vergendeld</p>
+            <section class="py-3" aria-labelledby="weekly-statistics-title">
+                <div class="settings-card rounded-2xl bg-surface p-5 shadow-card">
+                    <h2 id="weekly-statistics-title" class="text-base font-bold">Wekelijkse bewegingsminuten</h2>
+                    <div class="mt-3 rounded-xl bg-app-bg p-4" data-chart="weekly-minutes">
+                        <p class="text-sm text-muted" role="status">
+                            Je weekoverzicht verschijnt hier zodra er beweeggegevens beschikbaar zijn.
+                        </p>
                     </div>
                 </div>
             </section>
 
+            <section class="py-3" aria-labelledby="earned-badges-title">
+                <h2 id="earned-badges-title" class="text-base font-bold">Behaalde badges</h2>
+
+                <div class="mt-3 space-y-3" data-badge-list="earned">
+                    <p class="rounded-xl bg-app-bg p-4 text-sm text-muted" role="status">
+                        Je behaalde badges verschijnen hier zodra er trackergegevens zijn.
+                    </p>
+                </div>
+
+                <h2 class="mt-6 text-base font-bold">Vergrendelde badges</h2>
+                <div class="mt-3 space-y-3" data-badge-list="locked">
+                    <p class="rounded-xl bg-app-bg p-4 text-sm text-muted" role="status">
+                        Vergrendelde badges verschijnen hier zodra de tracker actief is.
+                    </p>
+                </div>
+            </section>
         </main>
         <!-- ========================================= -->
         <!-- FOOTER -->

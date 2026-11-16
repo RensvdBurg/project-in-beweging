@@ -137,6 +137,8 @@ $returnToHome = ($_GET['from'] ?? '') === 'home';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#f7f8fa" id="theme-color">
+    <script defer src="/project-in-beweging/assets/js/page-entry.js?v=<?= filemtime(__DIR__ . '/../../assets/js/page-entry.js') ?>"></script>
+
     <title><?= $escape($pageTitle) ?></title>
     <link rel="stylesheet" href="/project-in-beweging/css/output.css?v=<?= $cssVersion ?>">
     <meta

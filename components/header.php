@@ -68,6 +68,9 @@ if (!empty($_SESSION['user']['id'])) {
     ) ?>">
 <script
     src="/project-in-beweging/assets/js/app-settings.js?v=<?= filemtime(__DIR__ . '/../assets/js/app-settings.js') ?>"></script>
+<script
+    defer
+    src="/project-in-beweging/assets/js/page-entry.js?v=<?= filemtime(__DIR__ . '/../assets/js/page-entry.js') ?>"></script>
 
 
 <!-- ========================================= -->

@@ -46,6 +46,8 @@ $isReturningToSettingsPage = ($_GET['transition'] ?? null) === 'back';
 
     <meta name="theme-color" content="#f7f8fa" id="theme-color">
 
+    <script defer src="/project-in-beweging/assets/js/page-entry.js?v=<?= filemtime(__DIR__ . '/../../assets/js/page-entry.js') ?>"></script>
+
     <title>Instellingen | UpMove</title>
 
 

@@ -30,6 +30,8 @@
       history.replaceState({}, "", url);
     }
 
+    window.scrollTo(0, 0);
+
     return true;
   }
 

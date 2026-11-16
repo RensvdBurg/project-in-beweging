@@ -28,6 +28,8 @@ $csrfToken = $_SESSION['csrf_token'];
 $statusMessage = '';
 $statusType = 'success';
 $accountUser = null;
+$aboutMeInput = '';
+$aboutMeWasSubmitted = false;
 $passwordFormOpen = false;
 $db = null;
 
@@ -89,6 +91,23 @@ try {
                             $_SESSION['user']['full_name'] = $name;
                             $statusMessage = 'Je profiel is bijgewerkt.';
                         }
+                    }
+                } elseif ($action === 'about_me') {
+                    $aboutMeWasSubmitted = true;
+                    $aboutMeInput = trim($postString('about_me'));
+
+                    if (!preg_match('/\A.{0,500}\z/us', $aboutMeInput)) {
+                        $statusMessage = 'Je stukje over jezelf mag maximaal 500 tekens bevatten.';
+                        $statusType = 'error';
+                    } else {
+                        $statement = $db->prepare(
+                            'UPDATE users SET about_me = :about_me WHERE id = :id'
+                        );
+                        $statement->execute([
+                            'about_me' => $aboutMeInput,
+                            'id' => $accountUserId,
+                        ]);
+                        $statusMessage = 'Je stukje over jezelf is opgeslagen.';
                     }
                 } elseif ($action === 'password') {
                     $passwordFormOpen = true;
@@ -156,9 +175,12 @@ try {
         }
 
         // Haal na opslaan opnieuw de profielgegevens uit de database op.
-        $statement = $db->prepare('SELECT email, username, full_name FROM users WHERE id = :id');
+        $statement = $db->prepare('SELECT email, username, full_name, about_me FROM users WHERE id = :id');
         $statement->execute(['id' => $accountUserId]);
         $accountUser = $statement->fetch();
+        if (!$aboutMeWasSubmitted || $statusType !== 'error') {
+            $aboutMeInput = is_array($accountUser) ? $accountUser['about_me'] : $aboutMeInput;
+        }
 
         if (!$accountUser) {
             unset($_SESSION['user']);
@@ -184,9 +206,12 @@ try {
     if (!is_array($accountUser) && $db instanceof PDO) {
         // Bij een fout tijdens opslaan proberen we de huidige gegevens alsnog te tonen.
         try {
-            $statement = $db->prepare('SELECT email, username, full_name FROM users WHERE id = :id');
+            $statement = $db->prepare('SELECT email, username, full_name, about_me FROM users WHERE id = :id');
             $statement->execute(['id' => $accountUserId]);
             $accountUser = $statement->fetch() ?: null;
+            if (!$aboutMeWasSubmitted || $statusType !== 'error') {
+                $aboutMeInput = is_array($accountUser) ? $accountUser['about_me'] : $aboutMeInput;
+            }
         } catch (PDOException $exception) {
             error_log('Accountgegevens ophalen mislukt: ' . $exception->getMessage());
         }
@@ -209,9 +234,10 @@ if (is_array($accountUser)) {
 }
 $initials = $initials !== '' ? strtoupper($initials) : '?';
 
+$enableSettingsPageTransitions = true;
 ?>
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="nl" class="settings-page-transition">
 <head>
     <!-- Deel de globale font-, CSS- en dark-mode-instellingen met de rest van de app. -->
     <?php $pageTitle = 'Account | UpMove'; ?>
@@ -223,7 +249,7 @@ $initials = $initials !== '' ? strtoupper($initials) : '?';
             <!-- Navigatie en profielkaart vormen de kop van de accountinstellingen. -->
             <header class="relative mb-6 flex min-h-11 items-center justify-center">
                 <a
-                    href="/project-in-beweging/pages/settings/settings.php"
+                    href="/project-in-beweging/pages/settings/settings.php?transition=back"
                     class="settings-card absolute left-0 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm transition hover:bg-[#f4f6f8] active:scale-95 focus-visible:outline-2 focus-visible:outline-orange"
                     aria-label="Terug naar instellingen">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -248,6 +274,30 @@ $initials = $initials !== '' ? strtoupper($initials) : '?';
                         <span class="block truncate text-[15px] font-extrabold"><?= $escape($accountUser['full_name']) ?></span>
                         <span class="settings-description mt-0.5 block truncate text-[12px] text-[#9299a3]"><?= $escape($accountUser['email']) ?></span>
                     </span>
+                </section>
+
+                <section class="mb-6">
+                    <h2 class="settings-label mb-2 px-0.5 text-[11px] font-extrabold uppercase tracking-wide text-[#858c97]">Over mij</h2>
+                    <form method="post" class="account-surface overflow-hidden rounded-[18px] bg-white shadow-[0_4px_14px_rgba(20,28,38,0.05)]">
+                        <fieldset class="contents">
+                            <input type="hidden" name="csrf_token" value="<?= $escape($csrfToken) ?>">
+                            <input type="hidden" name="action" value="about_me">
+                            <label class="block p-4">
+                                <span class="settings-label mb-1.5 block text-[11px] font-semibold text-[#858c97]">Vertel iets over jezelf</span>
+                                <textarea
+                                    name="about_me"
+                                    rows="5"
+                                    maxlength="500"
+                                    aria-describedby="about-me-visibility"
+                                    class="account-input w-full resize-y rounded-xl border border-[#e5e8ec] bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange focus-visible:ring-2 focus-visible:ring-orange/30"><?= $escape($aboutMeInput) ?></textarea>
+                                <span id="about-me-visibility" class="settings-description mt-2 block text-[11px] text-[#9299a3]">Dit stukje is zichtbaar voor andere ingelogde gebruikers die je profiel via de ranglijst bekijken. Maximaal 500 tekens.</span>
+                            </label>
+                            <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
+                            <div class="flex justify-end p-4">
+                                <button type="submit" class="rounded-xl bg-orange px-4 py-2.5 text-[12px] font-bold text-white transition hover:brightness-95 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange">Over mij opslaan</button>
+                            </div>
+                        </fieldset>
+                    </form>
                 </section>
 
                 <section class="mb-6">

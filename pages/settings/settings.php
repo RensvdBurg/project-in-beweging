@@ -10,14 +10,33 @@ if (empty($_SESSION['user'])) {
     exit;
 }
 
+if (empty($_SESSION['user']['id'])) {
+    http_response_code(401);
+    exit('Je account kon niet worden vastgesteld.');
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+require_once __DIR__ . '/../../database/database.php';
+require_once __DIR__ . '/../../database/user-settings.php';
+
+$userSettingsData = getUserSettings(
+    getDatabaseConnection(),
+    (int) $_SESSION['user']['id']
+);
+
 $userId = $_SESSION['user']['id']
     ?? $_SESSION['user']['email']
     ?? $_SESSION['user']['full_name']
     ?? 'user';
+$enableSettingsPageTransitions = true;
+$isReturningToSettingsPage = ($_GET['transition'] ?? null) === 'back';
 
 ?>
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="nl"<?= $isReturningToSettingsPage ? ' class="settings-page-transition-back"' : '' ?>>
 
 <head>
 
@@ -34,8 +53,31 @@ $userId = $_SESSION['user']['id']
     <link
         rel="stylesheet"
         href="/project-in-beweging/css/output.css?v=<?= filemtime(__DIR__ . '/../../css/output.css') ?>">
+    <?php $settingsTransitionCss = __DIR__ . '/../../assets/css/settings-page-transition.css'; ?>
+    <link
+        rel="stylesheet"
+        href="/project-in-beweging/assets/css/settings-page-transition.css?v=<?= filemtime($settingsTransitionCss) ?>">
 
-    <script src="/project-in-beweging/assets/js/app-settings.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+
+    <meta
+        name="upmove-initial-settings"
+        content="<?= htmlspecialchars(
+            json_encode([
+                'userId' => (int) $_SESSION['user']['id'],
+                'csrfToken' => $_SESSION['csrf_token'],
+                'settings' => $userSettingsData['settings'],
+                'exists' => $userSettingsData['exists'],
+            ], JSON_THROW_ON_ERROR),
+            ENT_QUOTES,
+            'UTF-8'
+        ) ?>">
+    <script
+        src="/project-in-beweging/assets/js/app-settings.js?v=<?= filemtime(__DIR__ . '/../../assets/js/app-settings.js') ?>"></script>
 
 </head>
 
@@ -43,7 +85,7 @@ $userId = $_SESSION['user']['id']
 <body class="min-h-dvh bg-[#f7f8fa] text-[#20242a] antialiased">
 
 
-    <div class="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
+    <div class="settings-page-shell mx-auto flex min-h-dvh w-full max-w-lg flex-col">
 
 
         <!-- ========================================= -->
@@ -68,22 +110,6 @@ $userId = $_SESSION['user']['id']
                 <h1 class="text-[17px] font-extrabold tracking-tight">
                     Instellingen
                 </h1>
-
-
-                <button type="button"
-                    class="settings-card absolute right-0 grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm transition active:scale-95"
-                    aria-label="Meldingen">
-
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-
-                        <path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor"
-                            stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-
-                        <path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-
-                    </svg>
-
-                </button>
 
             </header>
 
@@ -159,61 +185,10 @@ $userId = $_SESSION['user']['id']
                         </div>
 
 
-                        <input id="setting-frequency" type="range" min="15" max="120" step="15" value="45"
+                        <input id="setting-frequency" type="range" min="15" max="120" step="15" value="60"
                             class="upmove-range block" aria-label="Herinneringsfrequentie">
 
                     </div>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
-
-
-                    <!-- DAGDOEL -->
-
-                    <div class="flex items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Dagelijks sta-doel
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Hoe vaak wil je per dag opstaan?
-                            </p>
-
-                        </div>
-
-
-                        <div class="flex shrink-0 items-center gap-2">
-
-
-                            <button type="button" id="settings-goal-minus"
-                                class="settings-button grid h-8 w-8 place-items-center rounded-lg bg-[#f4f6f8] text-base font-bold transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
-                                aria-label="Dagdoel verlagen">
-                                −
-                            </button>
-
-
-                            <span id="settings-goal-value" class="min-w-6 text-center text-[14px] font-extrabold">
-                                12
-                            </span>
-
-
-                            <button type="button" id="settings-goal-plus"
-                                class="settings-button grid h-8 w-8 place-items-center rounded-lg bg-[#f4f6f8] text-base font-bold transition active:scale-90 disabled:cursor-not-allowed disabled:opacity-40"
-                                aria-label="Dagdoel verhogen">
-                                +
-                            </button>
-
-
-                        </div>
-
-                    </div>
-
                 </div>
 
             </section>
@@ -249,8 +224,8 @@ $userId = $_SESSION['user']['id']
                             </p>
 
                             <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Herinneringen alleen binnen
-                                jouw ingestelde tijden
+                                Herinneringen en meldingen bij nieuwe opdrachten alleen binnen jouw ingestelde tijden.
+                                UpMove moet open zijn.
                             </p>
 
                         </div>
@@ -282,157 +257,58 @@ $userId = $_SESSION['user']['id']
                         class="settings-work-options border-t border-[#eceef2] bg-[#fafbfc] p-4 transition">
 
 
-                        <!-- TIJDEN -->
-
-                        <div class="grid grid-cols-2 gap-3">
-
-
-                            <!-- START -->
-
-                            <div>
-
-                                <label for="setting-work-start"
-                                    class="settings-label mb-1.5 block text-[11px] font-semibold text-[#858c97]">
-                                    Starttijd
-                                </label>
-
-                                <input id="setting-work-start" type="time" value="08:30"
-                                    class="settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange">
-
-                            </div>
-
-
-
-                            <!-- EIND -->
-
-                            <div>
-
-                                <label for="setting-work-end"
-                                    class="settings-label mb-1.5 block text-[11px] font-semibold text-[#858c97]">
-                                    Eindtijd
-                                </label>
-
-                                <input id="setting-work-end" type="time" value="17:00"
-                                    class="settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange">
-
-                            </div>
-
-                        </div>
-
-
-
-                        <!-- DAGEN -->
-
-                        <div class="mt-4">
-
-
+                        <div class="mt-1">
                             <p class="settings-label mb-2 text-[11px] font-semibold text-[#858c97]">
-                                Werk- / schooldagen
+                                Werk- / schooldagen en tijden
                             </p>
 
-
-                            <div class="grid grid-cols-7 gap-1.5">
-
-
-                                <!-- MA -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="1" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Ma
-                                    </span>
-
-                                </label>
-
-
-                                <!-- DI -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="2" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Di
-                                    </span>
-
-                                </label>
-
-
-                                <!-- WO -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="3" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Wo
-                                    </span>
-
-                                </label>
-
-
-                                <!-- DO -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="4" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Do
-                                    </span>
-
-                                </label>
-
-
-                                <!-- VR -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="5" checked>
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Vr
-                                    </span>
-
-                                </label>
-
-
-                                <!-- ZA -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="6">
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Za
-                                    </span>
-
-                                </label>
-
-
-                                <!-- ZO -->
-
-                                <label class="cursor-pointer">
-
-                                    <input type="checkbox" class="work-day peer sr-only" value="0">
-
-                                    <span
-                                        class="settings-day-label grid h-9 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
-                                        Zo
-                                    </span>
-
-                                </label>
-
+                            <div class="mb-1 grid grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-1 text-[10px] font-semibold text-[#9299a3]">
+                                <span>Dag</span>
+                                <span>Starttijd</span>
+                                <span>Eindtijd</span>
                             </div>
 
+                            <div class="space-y-2">
+                                <?php
+                                $workWeekdays = [
+                                    1 => 'Ma',
+                                    2 => 'Di',
+                                    3 => 'Wo',
+                                    4 => 'Do',
+                                    5 => 'Vr',
+                                    6 => 'Za',
+                                    0 => 'Zo',
+                                ];
+                                foreach ($workWeekdays as $dayNumber => $dayLabel):
+                                    $isWorkday = in_array($dayNumber, [1, 2, 3, 4, 5], true);
+                                ?>
+                                    <div class="grid grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2">
+                                        <label class="cursor-pointer">
+                                            <input type="checkbox" class="work-day peer sr-only"
+                                                value="<?= $dayNumber ?>"<?= $isWorkday ? ' checked' : '' ?>>
+                                            <span class="settings-day-label grid h-10 place-items-center rounded-lg bg-[#f0f2f5] text-[11px] font-bold text-[#7d858f] transition peer-checked:bg-orange peer-checked:text-white">
+                                                <?= $dayLabel ?>
+                                            </span>
+                                        </label>
+                                        <div>
+                                            <label class="sr-only" for="setting-work-start-<?= $dayNumber ?>">
+                                                Starttijd <?= $dayLabel ?>
+                                            </label>
+                                            <input id="setting-work-start-<?= $dayNumber ?>" type="time"
+                                                class="work-time work-time-start settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-2 py-2.5 text-[12px] font-semibold outline-none transition focus:border-orange"
+                                                data-day="<?= $dayNumber ?>" value="08:30">
+                                        </div>
+                                        <div>
+                                            <label class="sr-only" for="setting-work-end-<?= $dayNumber ?>">
+                                                Eindtijd <?= $dayLabel ?>
+                                            </label>
+                                            <input id="setting-work-end-<?= $dayNumber ?>" type="time"
+                                                class="work-time work-time-end settings-input w-full rounded-xl border border-[#e5e8ec] bg-white px-2 py-2.5 text-[12px] font-semibold outline-none transition focus:border-orange"
+                                                data-day="<?= $dayNumber ?>" value="17:00">
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
 
 
@@ -443,6 +319,11 @@ $userId = $_SESSION['user']['id']
                             class="mt-4 rounded-xl bg-[#eef8f7] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-[#268f85]">
                             Ma t/m Vr · 08:30 - 17:00
                         </div>
+
+                        <p id="work-notification-status"
+                            class="mt-2 text-[11px] leading-relaxed text-[#858c97]"
+                            role="status"
+                            aria-live="polite"></p>
 
 
                     </div>
@@ -470,129 +351,6 @@ $userId = $_SESSION['user']['id']
                     class="settings-card overflow-hidden rounded-[18px] bg-white shadow-[0_4px_14px_rgba(20,28,38,0.05)]">
 
 
-                    <!-- HERINNERINGEN -->
-
-                    <label class="flex cursor-pointer items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Bewegingsherinneringen
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Ontvang meldingen wanneer het
-                                tijd is om te bewegen
-                            </p>
-
-                        </div>
-
-
-                        <div class="relative shrink-0">
-
-                            <input id="setting-reminders" type="checkbox" class="peer sr-only">
-
-                            <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
-                            </div>
-
-                            <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
-                            </div>
-
-                        </div>
-
-                    </label>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
-
-
-                    <!-- STILLE UREN -->
-
-                    <label class="flex cursor-pointer items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Stille uren
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Geen meldingen tussen
-                                21:00 - 08:00
-                            </p>
-
-                        </div>
-
-
-                        <div class="relative shrink-0">
-
-                            <input id="setting-quiet-hours" type="checkbox" class="peer sr-only">
-
-                            <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
-                            </div>
-
-                            <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
-                            </div>
-
-                        </div>
-
-                    </label>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
-
-
-                    <!-- GELUID -->
-
-                    <label class="flex cursor-pointer items-center gap-3 p-4">
-
-
-                        <div class="min-w-0 flex-1">
-
-                            <p class="text-[13px] font-bold">
-                                Geluidseffecten
-                            </p>
-
-                            <p class="settings-description mt-0.5 text-[11px] leading-snug text-[#9299a3]">
-                                Speel een vriendelijke toon
-                                bij een melding
-                            </p>
-
-                        </div>
-
-
-                        <div class="relative shrink-0">
-
-                            <input id="setting-sound" type="checkbox" class="peer sr-only">
-
-                            <div
-                                class="h-[28px] w-[48px] rounded-full bg-[#e6ebee] transition-colors peer-checked:bg-[#2ec4b6]">
-                            </div>
-
-                            <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
-                            </div>
-
-                        </div>
-
-                    </label>
-
-
-
-                    <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
-
-
-
                     <!-- DARK MODE -->
 
                     <label class="flex cursor-pointer items-center gap-3 p-4">
@@ -612,7 +370,7 @@ $userId = $_SESSION['user']['id']
                         </div>
 
 
-                        <div class="relative shrink-0">
+                        <div class="settings-theme-switch relative shrink-0">
 
                             <input id="setting-dark" type="checkbox" class="peer sr-only">
 
@@ -621,7 +379,7 @@ $userId = $_SESSION['user']['id']
                             </div>
 
                             <div
-                                class="absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
+                                class="settings-theme-knob absolute left-[3px] top-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5">
                             </div>
 
                         </div>
@@ -633,7 +391,7 @@ $userId = $_SESSION['user']['id']
 
             </section>
             <!-- ===================================== -->
-            <!-- LOCALSTORAGE FOUT -->
+            <!-- DATABASE FOUT -->
             <!-- ===================================== -->
 
             <p id="settings-storage-error"
@@ -659,7 +417,8 @@ $userId = $_SESSION['user']['id']
 
 
 
-    <script src="/project-in-beweging/assets/js/settings-page.js"></script>
+    <script
+        src="/project-in-beweging/assets/js/settings-page.js?v=<?= filemtime(__DIR__ . '/../../assets/js/settings-page.js') ?>"></script>
 
 
 </body>

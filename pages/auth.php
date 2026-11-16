@@ -11,8 +11,12 @@ session_start();
 $authMessage = $_SESSION['auth_message'] ?? '';
 $authMessageType = $_SESSION['auth_message_type'] ?? 'error';
 $activeAuthMode = $_SESSION['auth_mode'] ?? 'login';
+$registrationValues = $_SESSION['registration_values'] ?? [];
+if (!is_array($registrationValues)) {
+    $registrationValues = [];
+}
 $currentUser = $_SESSION['user'] ?? null;
-unset($_SESSION['auth_message'], $_SESSION['auth_message_type'], $_SESSION['auth_mode']);
+unset($_SESSION['auth_message'], $_SESSION['auth_message_type'], $_SESSION['auth_mode'], $_SESSION['registration_values']);
 
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -29,10 +33,26 @@ if (!in_array($mode, ['login', 'register', 'logout', 'next_challenge', 'complete
     exit('Ongeldige aanvraag.');
 }
 
-$redirectWithMessage = static function (string $message, string $type = 'error') use (&$mode): never {
+$registrationValues = [];
+if ($mode === 'register') {
+    foreach (['email', 'username', 'fullName', 'day', 'month', 'year'] as $field) {
+        $value = $_POST[$field] ?? '';
+        if (is_string($value)) {
+            $registrationValues[$field] = $value;
+        }
+    }
+}
+$registrationInvalidFields = [];
+$redirectWithMessage = static function (string $message, string $type = 'error') use (&$mode, &$registrationValues, &$registrationInvalidFields): never {
     $_SESSION['auth_message'] = $message;
     $_SESSION['auth_message_type'] = $type;
     $_SESSION['auth_mode'] = $mode;
+    if ($mode === 'register') {
+        foreach ($registrationInvalidFields as $field) {
+            unset($registrationValues[$field]);
+        }
+        $_SESSION['registration_values'] = $registrationValues;
+    }
     header('Location: index.php', true, 303);
     exit;
 };
@@ -231,12 +251,15 @@ try {
         $year = filter_var($_POST['year'] ?? null, FILTER_VALIDATE_INT);
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 254) {
+            $registrationInvalidFields = ['email'];
             $redirectWithMessage('Vul een geldig e-mailadres in.');
         }
         if (!preg_match('/\A[A-Za-z0-9_.-]{3,30}\z/', $username)) {
+            $registrationInvalidFields = ['username'];
             $redirectWithMessage('Je gebruikersnaam moet 3 tot 30 tekens bevatten (letters, cijfers, punt, streepje of underscore).');
         }
         if ($fullName === '' || !preg_match('/\A.{1,150}\z/us', $fullName)) {
+            $registrationInvalidFields = ['fullName'];
             $redirectWithMessage('Vul een naam van maximaal 150 tekens in.');
         }
         if (strlen($password) < 8 || strlen($password) > 72) {
@@ -251,6 +274,7 @@ try {
             !checkdate($month, $day, $year) ||
             sprintf('%04d-%02d-%02d', $year, $month, $day) > date('Y-m-d')
         ) {
+            $registrationInvalidFields = ['day', 'month', 'year'];
             $redirectWithMessage('Kies een geldige geboortedatum.');
         }
 
@@ -282,6 +306,12 @@ try {
 
     $identifier = trim($postString('email'));
     $password = $postString('password');
+    require_once __DIR__ . '/../database/login-rate-limit.php';
+    if (!allowLoginAttempt($db, $identifier, $_SERVER['REMOTE_ADDR'] ?? 'unknown')) {
+        http_response_code(429);
+        header('Retry-After: ' . (900 - time() % 900));
+        exit('Te veel inlogpogingen. Probeer het over 15 minuten opnieuw.');
+    }
     $statement = $db->prepare(
         'SELECT id, username, full_name, password_hash, xp
          FROM users
@@ -297,6 +327,9 @@ try {
     if (!$user || !password_verify($password, $user['password_hash'])) {
         $redirectWithMessage('E-mailadres/gebruikersnaam of wachtwoord is onjuist.');
     }
+
+    $clearAttempts = $db->prepare('DELETE FROM login_rate_limits WHERE bucket_key = :key');
+    $clearAttempts->execute(['key' => hash('sha256', 'account:' . strtolower($identifier))]);
 
     session_regenerate_id(true);
     $_SESSION['user'] = [
@@ -316,7 +349,27 @@ try {
     }
 
     if ($mode === 'register' && (int) ($exception->errorInfo[1] ?? 0) === 1062) {
-        $redirectWithMessage('Dit e-mailadres of deze gebruikersnaam is al in gebruik.');
+        $duplicateKey = (string) ($exception->errorInfo[2] ?? '');
+        if (str_contains($duplicateKey, 'users_email_unique')) {
+            $registrationInvalidFields = ['email'];
+            $message = 'Dit e-mailadres is al in gebruik.';
+        } elseif (str_contains($duplicateKey, 'users_username_unique')) {
+            $registrationInvalidFields = ['username'];
+            $message = 'Deze gebruikersnaam is al in gebruik.';
+        } else {
+            $registrationInvalidFields = ['email', 'username'];
+            $message = 'Dit e-mailadres of deze gebruikersnaam is al in gebruik.';
+        }
+        $redirectWithMessage($message);
+    }
+
+    if (
+        $mode === 'login' &&
+        (int) ($exception->errorInfo[1] ?? 0) === 1146 &&
+        str_contains($exception->getMessage(), 'login_rate_limits')
+    ) {
+        error_log('Authenticatie/databasefout: tabel login_rate_limits ontbreekt; voer de bijbehorende migratie uit.');
+        $redirectWithMessage('De database is nog niet bijgewerkt. Importeer database/migrations/001_login_rate_limits.sql en probeer het opnieuw.');
     }
 
     error_log('Authenticatie/databasefout: ' . $exception->getMessage());

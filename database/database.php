@@ -3,12 +3,13 @@
 function getDatabaseConnection(): PDO
 {
     $host = getenv('DB_HOST') ?: 'localhost';
+    $port = getenv('DB_PORT') ?: '3306';
     $dbname = getenv('DB_NAME') ?: 'bewegingsapp';
     $username = getenv('DB_USER') ?: 'root';
     $password = getenv('DB_PASSWORD') ?: '';
 
     return new PDO(
-        "mysql:host={$host};dbname={$dbname};charset=utf8mb4",
+        "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4",
         $username,
         $password,
         [

@@ -16,14 +16,8 @@
     }
 
 
-    const userKey =
-        `upmove:settings:${screen.dataset.userId}`;
-
-    const darkModeKey =
-        'upmove:dark-mode';
-
-    const workHoursKey =
-        'upmove:work-hours';
+    const initialSettings =
+        window.upmoveInitialSettings || {};
 
 
 
@@ -41,23 +35,6 @@
             'settings-frequency-label'
         );
 
-    const goalValue =
-        document.getElementById(
-            'settings-goal-value'
-        );
-
-    const goalMinus =
-        document.getElementById(
-            'settings-goal-minus'
-        );
-
-    const goalPlus =
-        document.getElementById(
-            'settings-goal-plus'
-        );
-
-
-
     /*
      * WERK / SCHOOL
      */
@@ -67,19 +44,14 @@
             'setting-work-only'
         );
 
-    const workStart =
-        document.getElementById(
-            'setting-work-start'
-        );
-
-    const workEnd =
-        document.getElementById(
-            'setting-work-end'
-        );
-
     const workDays =
         document.querySelectorAll(
             '.work-day'
+        );
+
+    const workTimeInputs =
+        document.querySelectorAll(
+            '.work-time'
         );
 
     const workOptions =
@@ -92,6 +64,11 @@
             'work-hours-summary'
         );
 
+    const workNotificationStatus =
+        document.getElementById(
+            'work-notification-status'
+        );
+
 
 
     /*
@@ -99,18 +76,6 @@
      */
 
     const switches = {
-
-        reminders: document.getElementById(
-            'setting-reminders'
-        ),
-
-        quietHours: document.getElementById(
-            'setting-quiet-hours'
-        ),
-
-        sound: document.getElementById(
-            'setting-sound'
-        ),
 
         darkMode: document.getElementById(
             'setting-dark'
@@ -134,15 +99,7 @@
 
     const settings = {
 
-        frequency: 45,
-
-        dailyGoal: 12,
-
-        reminders: true,
-
-        quietHours: true,
-
-        sound: false,
+        frequency: 60,
 
         darkMode: false,
 
@@ -158,238 +115,37 @@
             3,
             4,
             5
-        ]
+        ],
+
+        workSchedule: Array.from(
+            { length: 7 },
+            () => ({ start: '08:30', end: '17:00' })
+        )
 
     };
 
 
 
-    /*
-     * ==========================================
-     * OPGESLAGEN INSTELLINGEN LADEN
-     * ==========================================
-     */
+    Object.assign(settings, initialSettings.settings || {});
+    settings.workSchedule = normalizeWorkSchedule(settings);
 
-    try {
-
-        const saved =
-            JSON.parse(
-                localStorage.getItem(
-                    userKey
-                )
-            );
-
-
-        if (
-            saved &&
-            typeof saved === 'object'
-        ) {
-
-
-            /*
-             * FREQUENTIE
-             */
-            if (
-                Number.isInteger(
-                    saved.frequency
-                ) &&
-                saved.frequency >= 15 &&
-                saved.frequency <= 120 &&
-                saved.frequency % 15 === 0
-            ) {
-
-                settings.frequency =
-                    saved.frequency;
-
-            }
-
-
-
-            /*
-             * DAGDOEL
-             */
-            if (
-                Number.isInteger(
-                    saved.dailyGoal
-                ) &&
-                saved.dailyGoal >= 1 &&
-                saved.dailyGoal <= 30
-            ) {
-
-                settings.dailyGoal =
-                    saved.dailyGoal;
-
-            }
-
-
-
-            /*
-             * SWITCHES
-             */
-            [
-                'reminders',
-                'quietHours',
-                'sound',
-                'darkMode',
-                'workOnly'
-            ].forEach((name) => {
-
-                if (
-                    typeof saved[name] ===
-                    'boolean'
-                ) {
-
-                    settings[name] =
-                        saved[name];
-
-                }
-
-            });
-
-
-
-            /*
-             * WERKTIJD START
-             */
-            if (
-                typeof saved.workStart ===
-                'string' &&
-                /^\d{2}:\d{2}$/.test(
-                    saved.workStart
-                )
-            ) {
-
-                settings.workStart =
-                    saved.workStart;
-
-            }
-
-
-
-            /*
-             * WERKTIJD EIND
-             */
-            if (
-                typeof saved.workEnd ===
-                'string' &&
-                /^\d{2}:\d{2}$/.test(
-                    saved.workEnd
-                )
-            ) {
-
-                settings.workEnd =
-                    saved.workEnd;
-
-            }
-
-
-
-            /*
-             * WERKDAGEN
-             */
-            if (
-                Array.isArray(
-                    saved.workDays
-                )
-            ) {
-
-                const validDays =
-                    saved.workDays
-                    .map(Number)
-                    .filter(
-                        day =>
-                        Number.isInteger(day) &&
-                        day >= 0 &&
-                        day <= 6
-                    );
-
-
-                if (validDays.length > 0) {
-
-                    settings.workDays = [...new Set(validDays)];
-
-                }
-
-            }
-
-        }
-
-    } catch {
-
-        /*
-         * Gebruik standaardwaarden wanneer
-         * localStorage niet gelezen kan worden.
-         */
-
+    function normalizeWorkSchedule(source) {
+        return Array.from({ length: 7 }, (_, day) => {
+            const hours = source.workSchedule?.[day];
+            return {
+                start: hours?.start || source.workStart || '08:30',
+                end: hours?.end || source.workEnd || '17:00',
+            };
+        });
     }
 
-
-
-    /*
-     * ==========================================
-     * WERKDAGEN TEKST
-     * ==========================================
-     */
-
-    function getWorkDaysText() {
-
-        const names = {
-            0: 'Zo',
-            1: 'Ma',
-            2: 'Di',
-            3: 'Wo',
-            4: 'Do',
-            5: 'Vr',
-            6: 'Za'
-        };
-
-
-        /*
-         * Ma t/m Vr
-         */
-        const weekdays = [
-            1,
-            2,
-            3,
-            4,
-            5
-        ];
-
-
-        if (
-            JSON.stringify(
-                [...settings.workDays].sort()
-            ) ===
-            JSON.stringify(
-                [...weekdays].sort()
-            )
-        ) {
-
-            return 'Ma t/m Vr';
-
+    window.addEventListener('upmove:settings-loaded', (event) => {
+        if (event.detail && typeof event.detail === 'object') {
+            Object.assign(settings, event.detail);
+            settings.workSchedule = normalizeWorkSchedule(settings);
+            render();
         }
-
-
-        /*
-         * Alle dagen
-         */
-        if (
-            settings.workDays.length === 7
-        ) {
-
-            return 'Elke dag';
-
-        }
-
-
-        return settings.workDays
-            .map(
-                day =>
-                names[day]
-            )
-            .join(', ');
-
-    }
+    });
 
 
 
@@ -425,6 +181,37 @@
 
         }
 
+    }
+
+    function renderWorkNotificationStatus() {
+        if (!window.isSecureContext) {
+            workNotificationStatus.textContent =
+                'Browsermeldingen werken alleen via HTTPS of localhost.';
+            return;
+        }
+
+        if (!('Notification' in window)) {
+            workNotificationStatus.textContent =
+                'Deze browser ondersteunt geen browsermeldingen.';
+            return;
+        }
+
+        if (!settings.workOnly) {
+            workNotificationStatus.textContent =
+                'Zet deze instelling aan om meldingen bij nieuwe opdrachten te ontvangen.';
+            return;
+        }
+
+        if (Notification.permission === 'granted') {
+            workNotificationStatus.textContent =
+                'Browsermeldingen zijn toegestaan. UpMove moet open zijn om nieuwe opdrachten te signaleren.';
+        } else if (Notification.permission === 'denied') {
+            workNotificationStatus.textContent =
+                'Browsermeldingen zijn geblokkeerd. Pas dit aan via de site-instellingen van je browser.';
+        } else {
+            workNotificationStatus.textContent =
+                'Geef toestemming in je browser om meldingen bij nieuwe opdrachten te ontvangen.';
+        }
     }
 
 
@@ -470,26 +257,6 @@
             '--range-progress',
             `${rangeProgress}%`
         );
-
-
-
-        /*
-         * DAGDOEL
-         */
-
-        goalValue.textContent =
-            settings.dailyGoal;
-
-
-        goalMinus.disabled =
-            settings.dailyGoal <= 1;
-
-
-        goalPlus.disabled =
-            settings.dailyGoal >= 30;
-
-
-
         /*
          * ALGEMENE SWITCHES
          */
@@ -515,14 +282,6 @@
             settings.workOnly;
 
 
-        workStart.value =
-            settings.workStart;
-
-
-        workEnd.value =
-            settings.workEnd;
-
-
         workDays.forEach(
             (input) => {
 
@@ -536,6 +295,15 @@
             }
         );
 
+        workTimeInputs.forEach((input) => {
+            const day = Number(input.dataset.day);
+            const period = input.classList.contains('work-time-start')
+                ? 'start'
+                : 'end';
+            input.value = settings.workSchedule[day][period];
+            input.disabled = !settings.workOnly;
+        });
+
 
 
         /*
@@ -547,12 +315,6 @@
             'opacity-45',
             !settings.workOnly
         );
-
-
-        workStart.disabled = !settings.workOnly;
-
-
-        workEnd.disabled = !settings.workOnly;
 
 
         workDays.forEach(
@@ -570,10 +332,23 @@
          */
 
         if (settings.workOnly) {
-
-            workSummary.textContent =
-                `${getWorkDaysText()} · ${settings.workStart} - ${settings.workEnd}`;
-
+            const dayNames = {
+                0: 'Zo',
+                1: 'Ma',
+                2: 'Di',
+                3: 'Wo',
+                4: 'Do',
+                5: 'Vr',
+                6: 'Za'
+            };
+            workSummary.textContent = settings.workDays
+                .slice()
+                .sort((first, second) => (first + 6) % 7 - (second + 6) % 7)
+                .map((day) => {
+                    const hours = settings.workSchedule[day];
+                    return `${dayNames[day]} ${hours.start} - ${hours.end}`;
+                })
+                .join(' · ');
 
             workSummary.classList.remove(
                 'hidden'
@@ -585,6 +360,8 @@
                 'UpMove is de hele dag actief';
 
         }
+
+        renderWorkNotificationStatus();
 
 
 
@@ -606,7 +383,10 @@
                 ...settings,
                 workDays: [
                     ...settings.workDays
-                ]
+                ],
+                workSchedule: settings.workSchedule.map(
+                    (hours) => ({ ...hours })
+                )
             });
 
     }
@@ -619,102 +399,89 @@
      * ==========================================
      */
 
-    function save() {
+    let saveTimer;
+    let saveInProgress = false;
+    let savePending = false;
+    let saveVersion = 0;
 
-        render();
-
-
-        try {
-
-
-            /*
-             * ALLE SETTINGS PER ACCOUNT
-             */
-
-            localStorage.setItem(
-                userKey,
-                JSON.stringify(
-                    settings
-                )
-            );
-
-
-
-            /*
-             * DARK MODE GLOBAAL
-             *
-             * Andere pagina's hoeven hierdoor
-             * niet te weten welke gebruiker-key
-             * gebruikt wordt.
-             */
-
-            localStorage.setItem(
-                darkModeKey,
-                String(
-                    settings.darkMode
-                )
-            );
-
-
-
-            /*
-             * WERKTIJDEN GLOBAAL
-             */
-
-            localStorage.setItem(
-                workHoursKey,
-                JSON.stringify({
-                    enabled: settings.workOnly,
-
-                    start: settings.workStart,
-
-                    end: settings.workEnd,
-
-                    days: [
-                        ...settings.workDays
-                    ]
-                })
-            );
-
-
-
-            storageError.classList.add(
-                'hidden'
-            );
-
-
-        } catch {
-
-            storageError.textContent =
-                'Je browser kan deze instellingen niet bewaren. Ze blijven actief totdat je de pagina herlaadt.';
-
-
-            storageError.classList.remove(
-                'hidden'
-            );
-
+    async function persistSettings(version) {
+        if (saveInProgress) {
+            savePending = true;
+            return;
         }
 
+        saveInProgress = true;
+        const snapshot = {
+            ...settings,
+            workDays: [...settings.workDays],
+            workSchedule: settings.workSchedule.map(
+                (hours) => ({ ...hours })
+            ),
+        };
 
-
-        /*
-         * Andere scripts vertellen dat
-         * instellingen veranderd zijn.
-         */
-
-        window.dispatchEvent(
-            new CustomEvent(
-                'upmove:settings-changed', {
-                    detail: {
-                        ...settings,
-                        workDays: [
-                            ...settings.workDays
-                        ]
-                    }
+        try {
+            const response = await fetch(
+                '/project-in-beweging/pages/settings/settings-api.php',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': initialSettings.csrfToken,
+                    },
+                    keepalive: true,
+                    body: JSON.stringify({ settings: snapshot }),
                 }
-            )
+            );
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(
+                    result.error || 'De instellingen konden niet worden opgeslagen.'
+                );
+            }
+
+            if (version === saveVersion) {
+                storageError.classList.add('hidden');
+            }
+        } catch (error) {
+            console.error('Instellingen konden niet in de database worden opgeslagen.', error);
+            if (version === saveVersion) {
+                storageError.textContent =
+                    error.message || 'Je instellingen konden niet in de database worden opgeslagen.';
+                storageError.classList.remove('hidden');
+            }
+        } finally {
+            saveInProgress = false;
+            if (savePending || version !== saveVersion) {
+                savePending = false;
+                persistSettings(saveVersion);
+            }
+        }
+    }
+
+    function save(immediate = false) {
+        render();
+        saveVersion += 1;
+        window.dispatchEvent(
+            new CustomEvent('upmove:settings-changed', {
+                detail: {
+                    ...settings,
+                    workDays: [...settings.workDays],
+                    workSchedule: settings.workSchedule.map(
+                        (hours) => ({ ...hours })
+                    ),
+                },
+            })
         );
 
+        window.clearTimeout(saveTimer);
+        if (immediate) {
+            persistSettings(saveVersion);
+        } else {
+            saveTimer = window.setTimeout(
+                () => persistSettings(saveVersion),
+                250
+            );
+        }
     }
 
 
@@ -744,50 +511,10 @@
         }
     );
 
-
-
-    /*
-     * DAGDOEL -
-     */
-
-    goalMinus.addEventListener(
-        'click',
-        () => {
-
-            settings.dailyGoal =
-                Math.max(
-                    1,
-                    settings.dailyGoal - 1
-                );
-
-            save();
-
-        }
+    frequency.addEventListener(
+        'change',
+        () => save(true)
     );
-
-
-
-    /*
-     * DAGDOEL +
-     */
-
-    goalPlus.addEventListener(
-        'click',
-        () => {
-
-            settings.dailyGoal =
-                Math.min(
-                    30,
-                    settings.dailyGoal + 1
-                );
-
-            save();
-
-        }
-    );
-
-
-
     /*
      * NORMALE SWITCHES
      */
@@ -801,8 +528,10 @@
                 'change',
                 () => {
 
-                    settings[name] =
-                        input.checked;
+                    if (name === 'darkMode') {
+                        animateDarkModeChange(input.checked);
+                        return;
+                    }
 
                     save();
 
@@ -811,6 +540,44 @@
 
         }
     );
+
+    let darkModeTransitionTimer;
+    let darkModeTransitionVersion = 0;
+
+    function animateDarkModeChange(enabled) {
+        const prefersReducedMotion = window.matchMedia(
+            '(prefers-reduced-motion: reduce)'
+        ).matches;
+
+        if (prefersReducedMotion) {
+            settings.darkMode = enabled;
+            save();
+            return;
+        }
+
+        const version = ++darkModeTransitionVersion;
+        const root = document.documentElement;
+
+        window.clearTimeout(darkModeTransitionTimer);
+        root.classList.add('settings-theme-transition');
+
+        window.requestAnimationFrame(() => {
+            if (version !== darkModeTransitionVersion) {
+                return;
+            }
+
+            settings.darkMode = enabled;
+            save();
+
+            darkModeTransitionTimer = window.setTimeout(() => {
+                if (version !== darkModeTransitionVersion) {
+                    return;
+                }
+
+                root.classList.remove('settings-theme-transition');
+            }, 300);
+        });
+    }
 
 
 
@@ -827,44 +594,48 @@
 
             save();
 
+            if (
+                settings.workOnly &&
+                window.isSecureContext &&
+                'Notification' in window &&
+                Notification.permission === 'default'
+            ) {
+                try {
+                    Notification.requestPermission()
+                        .then(renderWorkNotificationStatus)
+                        .catch((error) => {
+                            console.error(
+                                'Browsermeldingstoestemming kon niet worden aangevraagd.',
+                                error
+                            );
+                            workNotificationStatus.textContent =
+                                'Browsermeldingstoestemming kon niet worden aangevraagd.';
+                        });
+                } catch (error) {
+                    console.error(
+                        'Browsermeldingstoestemming kon niet worden aangevraagd.',
+                        error
+                    );
+                    workNotificationStatus.textContent =
+                        'Browsermeldingstoestemming kon niet worden aangevraagd.';
+                }
+            }
+
         }
     );
 
 
 
-    /*
-     * STARTTIJD
-     */
-
-    workStart.addEventListener(
-        'change',
-        () => {
-
-            settings.workStart =
-                workStart.value;
-
+    workTimeInputs.forEach((input) => {
+        input.addEventListener('change', () => {
+            const day = Number(input.dataset.day);
+            const period = input.classList.contains('work-time-start')
+                ? 'start'
+                : 'end';
+            settings.workSchedule[day][period] = input.value;
             save();
-
-        }
-    );
-
-
-
-    /*
-     * EINDTIJD
-     */
-
-    workEnd.addEventListener(
-        'change',
-        () => {
-
-            settings.workEnd =
-                workEnd.value;
-
-            save();
-
-        }
-    );
+        });
+    });
 
 
 

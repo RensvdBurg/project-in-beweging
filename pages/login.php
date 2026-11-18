@@ -32,7 +32,8 @@ $currentYear = (int) date('Y');
             <span class="text-2xl font-extrabold tracking-tight text-foreground">UpMove</span>
         </div>
 
-        <section id="login" class="mx-auto w-full max-w-[322px] rounded-[24px] border border-[#e6ece9] bg-white/95 px-[32px] pb-[42px] pt-[36px] shadow-[0_24px_70px_rgba(16,54,46,0.12)] sm:max-w-[360px]<?= $activeAuthMode === 'register' ? ' hidden' : '' ?>" aria-labelledby="loginTitle">
+        <div id="authPanelSwitcher">
+            <section id="login" class="mx-auto w-full max-w-[322px] rounded-[24px] border border-[#e6ece9] bg-white/95 px-[32px] pb-[42px] pt-[36px] shadow-[0_24px_70px_rgba(16,54,46,0.12)] sm:max-w-[360px]<?= $activeAuthMode === 'register' ? ' hidden' : '' ?>" aria-labelledby="loginTitle">
             <?php if ($currentUser !== null): ?>
                 <h1 id="loginTitle" class="mb-[16px] text-[20px] font-semibold text-card-foreground">Je bent ingelogd</h1>
                 <p class="mb-[20px] text-center text-sm text-card-foreground">Welkom, <?= htmlspecialchars($currentUser['full_name'], ENT_QUOTES, 'UTF-8') ?> (<?= htmlspecialchars($currentUser['username'], ENT_QUOTES, 'UTF-8') ?>).</p>
@@ -65,9 +66,8 @@ $currentYear = (int) date('Y');
                 </form>
                 <p class="mt-[14px] text-center text-[10px] font-medium text-[#595959]">Heb je nog geen account? <button type="button" data-mode="register" class="cursor-pointer font-semibold text-[#17685b] hover:underline">Registreren</button></p>
             <?php endif; ?>
-        </section>
-
-        <section id="register" class="mx-auto w-full max-w-[322px] rounded-[24px] border border-[#e6ece9] bg-white/95 px-[28px] pb-[24px] pt-[24px] shadow-[0_24px_70px_rgba(16,54,46,0.12)] sm:max-w-[360px]<?= $activeAuthMode === 'register' && $currentUser === null ? '' : ' hidden' ?>" aria-labelledby="registerTitle">
+            </section>
+            <section id="register" class="mx-auto w-full max-w-[322px] rounded-[24px] border border-[#e6ece9] bg-white/95 px-[28px] pb-[24px] pt-[24px] shadow-[0_24px_70px_rgba(16,54,46,0.12)] sm:max-w-[360px]<?= $activeAuthMode === 'register' && $currentUser === null ? '' : ' hidden' ?>" aria-labelledby="registerTitle">
             <h1 id="registerTitle" class="mb-[11px] text-[20px] font-semibold text-card-foreground">Registreren</h1>
             <form id="registerForm" method="post" class="flex flex-col gap-[21px]">
                 <input type="hidden" name="action" value="register">
@@ -84,23 +84,23 @@ $currentYear = (int) date('Y');
                     <input id="confirmPassword" required type="password" name="confirmPassword" autocomplete="new-password" placeholder="Wachtwoord herhalen" class="h-[47px] w-full rounded-[18px] bg-card px-[19px] text-[13px] font-medium shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none placeholder:text-[#595959] focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]" />
                     <fieldset>
                         <legend class="mb-[12px] pl-[8px] text-[16px] font-semibold text-card-foreground">Geboortedatum</legend>
-                        <div class="flex gap-[12px]">
+                        <div class="flex gap-[12px]" data-birthdate-selects>
                             <label class="sr-only" for="birthDay">Dag</label>
-                            <select id="birthDay" required name="day" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
+                            <select id="birthDay" required name="day" data-placeholder="Dag" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
                                 <option value="" disabled <?= empty($registrationValues['day']) ? 'selected' : '' ?>>Dag</option>
                                 <?php for ($day = 1; $day <= 31; $day++): ?>
                                     <option value="<?= $day ?>" <?= ($registrationValues['day'] ?? '') === (string) $day ? 'selected' : '' ?>><?= $day ?></option>
                                 <?php endfor; ?>
                             </select>
                             <label class="sr-only" for="birthMonth">Maand</label>
-                            <select id="birthMonth" required name="month" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
+                            <select id="birthMonth" required name="month" data-placeholder="Maand" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
                                 <option value="" disabled <?= empty($registrationValues['month']) ? 'selected' : '' ?>>Maand</option>
                                 <?php foreach ($months as $monthNumber => $monthName): ?>
                                     <option value="<?= $monthNumber ?>" <?= ($registrationValues['month'] ?? '') === (string) $monthNumber ? 'selected' : '' ?>><?= htmlspecialchars($monthName, ENT_QUOTES, 'UTF-8') ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <label class="sr-only" for="birthYear">Jaar</label>
-                            <select id="birthYear" required name="year" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
+                            <select id="birthYear" required name="year" data-placeholder="Jaar" class="h-[47px] min-w-0 flex-1 rounded-[18px] bg-card px-[10px] text-[12px] font-medium text-card-foreground shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-[52px]">
                                 <option value="" disabled <?= empty($registrationValues['year']) ? 'selected' : '' ?>>Jaar</option>
                                 <?php for ($year = $currentYear; $year >= $currentYear - 110; $year--): ?>
                                     <option value="<?= $year ?>" <?= ($registrationValues['year'] ?? '') === (string) $year ? 'selected' : '' ?>><?= $year ?></option>
@@ -125,6 +125,7 @@ $currentYear = (int) date('Y');
                 <button type="submit" class="h-[39px] w-full cursor-pointer rounded-[18px] bg-primary text-[13px] font-semibold text-ink shadow-[0_7px_19px_oklch(0.25_0_0/0.16)] hover:bg-primary/90">Registreren</button>
             </form>
             <p class="mt-[14px] text-center text-[10px] font-medium text-[#595959]">Heb je al een account? <button type="button" data-mode="login" class="cursor-pointer font-semibold text-[#17685b] hover:underline">Aanmelden</button></p>
-        </section>
+            </section>
+        </div>
     </div>
 </main>

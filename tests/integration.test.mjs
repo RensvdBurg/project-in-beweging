@@ -94,9 +94,19 @@ test('isolated database and real HTTP account lifecycle', { timeout: 180000 }, a
   });
   await t.test('duplicate email and username are rejected separately', async () => {
     await stranger.request();
-    for (const changes of [{ username: 'another_user' }, { email: 'another@example.invalid' }]) {
+    for (const [changes, invalidField, retainedField, errorMessage] of [
+      [{ username: 'another_user' }, 'email', 'username', 'Dit e-mailadres is al in gebruik.'],
+      [{ email: 'another@example.invalid' }, 'username', 'email', 'Deze gebruikersnaam is al in gebruik.'],
+    ]) {
       assert.equal((await stranger.post({ ...registration, ...changes })).status, 303);
-      assert.match((await stranger.request()).body, /al in gebruik/);
+      const body = (await stranger.request()).body;
+      assert.ok(body.includes(errorMessage));
+      assert.match(body, new RegExp(`name="${invalidField}"[^>]*value=""`));
+      const retainedValue = changes[retainedField] ?? registration[retainedField];
+      assert.match(body, new RegExp(`name="${retainedField}"[^>]*value="${retainedValue}"`));
+      assert.match(body, /id="fullName"[^>]*value="CI Test"/);
+      assert.match(body, /<option value="1" selected>1<\/option>/);
+      assert.match(body, /<option value="2000" selected>2000<\/option>/);
       assert.equal(state().users, 1);
     }
   });

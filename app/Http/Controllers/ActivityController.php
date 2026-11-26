@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Activity;
+use App\Models\AuditLog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -111,11 +112,13 @@ class ActivityController extends Controller
             $imagePath = $this->storeNativeImage($nativeImage, $user->id);
         }
 
-        $user->activities()->create([
+        $activity = $user->activities()->create([
             'title' => trim($request->string('title')),
             'description' => trim($request->string('description')),
             'image_path' => $imagePath,
         ]);
+
+        AuditLog::record('activity_created', "{$user->username} heeft de activiteit \"{$activity->title}\" geplaatst.", $user);
 
         return redirect()->route('activities.index')->with([
             'status_message' => 'Je activiteit is toegevoegd.',

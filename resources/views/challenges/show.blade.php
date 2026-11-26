@@ -46,7 +46,7 @@
 
                 <h2 class="mb-2 text-lg font-extrabold">Over deze challenge</h2>
                 {{-- Oudere challenges hebben geen uitgebreide uitleg: dan de korte beschrijving --}}
-                <p class="whitespace-pre-line text-sm leading-relaxed text-muted">{{ $challenge->description_extra ?: $challenge->description }}</p>
+                <p class="whitespace-pre-line text-sm leading-relaxed text-muted">{{ $challenge->description_extra }}</p>
             </div>
         </article>
     </main>

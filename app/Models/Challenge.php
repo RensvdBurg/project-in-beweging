@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
-#[Fillable(['title', 'description', 'description_extra', 'img', 'kcal_burned', 'difficulty', 'xp_reward'])]
+#[Fillable(['title', 'description_extra', 'img', 'kcal_burned', 'difficulty', 'xp_reward'])]
 class Challenge extends Model
 {
     /**

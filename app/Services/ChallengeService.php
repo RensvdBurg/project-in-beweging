@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\Challenge;
 use App\Models\ChallengeCompletion;
 use App\Models\User;
@@ -173,7 +174,22 @@ class ChallengeService
             return 'De opdracht kon niet worden voltooid. Probeer het later opnieuw.';
         }
 
+        AuditLog::record('challenge_completed', "{$user->username} heeft \"{$challenge->title}\" voltooid (+{$challenge->xp_reward} XP).", $user);
+
         return "Opdracht voltooid! Je hebt {$challenge->xp_reward} XP verdiend.";
+    }
+
+    /**
+     * Verwijdert een challenge (admin-dashboard). Voltooiingen verdwijnen via cascade;
+     * de verdiende XP blijft staan. Wie deze challenge nu open heeft, krijgt bij het
+     * volgende bezoek een nieuwe.
+     */
+    public function delete(Challenge $challenge): void
+    {
+        DB::transaction(function () use ($challenge): void {
+            User::query()->where('current_challenge_id', $challenge->id)->update(['current_challenge_id' => null]);
+            $challenge->delete();
+        });
     }
 
     /**

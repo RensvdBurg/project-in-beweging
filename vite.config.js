@@ -18,6 +18,7 @@ export default defineConfig({
                 'resources/js/community.js',
                 'resources/js/learn.js',
                 'resources/css/learn-page-transition.css',
+                'resources/js/admin/admin.js',
             ],
             refresh: true,
             hotFile: nativephpHotFile(),

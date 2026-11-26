@@ -21,7 +21,7 @@ class RemoveUnusedDefaultChallengesTest extends TestCase
     {
         $now = now();
         DB::table('challenges')->insert([
-            'id' => 1, 'title' => 'Squats', 'description' => 'Doe 15 squats.', 'img' => 'images/challenges/squats.svg',
+            'id' => 1, 'title' => 'Squats', 'img' => 'images/challenges/squats.svg',
             'kcal_burned' => 8, 'difficulty' => 'Gemiddeld', 'xp_reward' => 20, 'created_at' => $now, 'updated_at' => $now,
         ]);
         $user = User::factory()->create();

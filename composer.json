@@ -9,6 +9,7 @@
         "php": "^8.3",
         "ikromjon/nativephp-mobile-local-notifications": "^1.11",
         "laravel/framework": "^13.17",
+        "laravel/sanctum": "^4.5",
         "laravel/tinker": "^3.0",
         "nativephp/mobile": "^4.8",
         "nativephp/mobile-camera": "^1.1"

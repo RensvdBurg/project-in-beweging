@@ -38,7 +38,7 @@ class HomeController extends Controller
             'rankings' => User::query()->leaderboard()->limit(10)->get(['id', 'username', 'full_name', 'xp']),
             'currentUserRank' => $user->leaderboardRank(),
             // Leren: alle challenges op volgorde van ID.
-            'challenges' => Challenge::query()->orderBy('id')->get(['id', 'title', 'description', 'img', 'kcal_burned', 'difficulty', 'xp_reward']),
+            'challenges' => Challenge::query()->orderBy('id')->get(['id', 'title', 'description_extra', 'img', 'kcal_burned', 'difficulty', 'xp_reward']),
             'screen' => $request->query('screen', 'home'),
             // Terug van een beschrijvingspagina: de slide-overgang de andere kant op.
             'learnTransitionBack' => $request->query('screen') === 'leren' && $request->query('transition') === 'back',

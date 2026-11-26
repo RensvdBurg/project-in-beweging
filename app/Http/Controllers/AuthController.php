@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\PhoneNotifications;
 use Closure;
@@ -75,6 +76,8 @@ class AuthController extends Controller
                 RateLimiter::hit($key, self::ATTEMPT_WINDOW_SECONDS);
             }
 
+            AuditLog::record('login_failed', 'Mislukte inlogpoging voor "'.mb_substr($identifier, 0, 100).'".', $user);
+
             return $this->redirectWithMessage('E-mailadres/gebruikersnaam of wachtwoord is onjuist.', 'error', 'login')
                 ->withInput($request->only('email'));
         }
@@ -84,6 +87,7 @@ class AuthController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
+        AuditLog::record('login', "{$user->username} is ingelogd.", $user);
 
         return redirect()->route('home');
     }
@@ -159,6 +163,7 @@ class AuthController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
+        AuditLog::record('register', "{$user->username} heeft een account aangemaakt.", $user);
 
         return redirect()->route('home');
     }
@@ -167,6 +172,10 @@ class AuthController extends Controller
     {
         // Geen meldingen meer van dit account op deze telefoon.
         $notifications->clear();
+
+        if ($request->user() !== null) {
+            AuditLog::record('logout', "{$request->user()->username} is uitgelogd.", $request->user());
+        }
 
         Auth::logout();
         $request->session()->invalidate();

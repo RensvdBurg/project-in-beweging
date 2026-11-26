@@ -12,16 +12,21 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * @property array<string, mixed>|null $settings Opgeslagen instellingen (JSON, via de 'array'-cast).
+ * @property bool $is_admin Mag het admin-dashboard openen (niet mass-assignable).
+ * @property Carbon|null $birth_date Geboortedatum (via de 'date'-cast).
  */
 #[Fillable(['email', 'username', 'password', 'full_name', 'birth_date'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * @return array<string, string>
@@ -33,7 +38,21 @@ class User extends Authenticatable
             'xp' => 'integer',
             'password' => 'hashed',
             'settings' => 'array',
+            'is_admin' => 'boolean',
         ];
+    }
+
+    /**
+     * Verwijdert het account met alle gegevens. De rijen (activiteiten, reacties, likes,
+     * voltooiingen) verdwijnen via cascade; de afbeeldingen ruimen we hier zelf op.
+     */
+    public function deleteAccount(): void
+    {
+        // API-tokens hebben geen foreign key (polymorf), dus die ruimen we zelf op.
+        $this->tokens()->delete();
+        $this->delete();
+
+        Storage::disk(Activity::IMAGE_DISK)->deleteDirectory("activities/{$this->id}");
     }
 
     /**

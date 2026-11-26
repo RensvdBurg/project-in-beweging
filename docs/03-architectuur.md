@@ -74,6 +74,7 @@ Een gast die `/` opent, gaat naar `/login`; een ingelogde gebruiker die `/login`
 | about_me | string(500), standaard `''` | uit de oude MySQL-database |
 | birth_date | date | |
 | xp | unsigned integer, standaard 0 | totaal verdiende XP |
+| is_admin | boolean, standaard false | mag het admin-dashboard openen (zie `docs/07-admin-dashboard.md`) |
 | remember_token, timestamps | | Laravel-standaard |
 
 ### `challenges`
@@ -81,8 +82,7 @@ Een gast die `/` opent, gaat naar `/login`; een ingelogde gebruiker die `/login`
 |---|---|
 | id | integer PK |
 | title | string |
-| description | text, nullable |
-| description_extra | text, nullable (uitgebreide uitleg; id 52–101 komen uit `bewegingsapp`) |
+| description_extra | text, nullable (uitleg op de beschrijvingspagina; id 52–101 komen uit `bewegingsapp`). De oude kolom `description` is verwijderd (migratie `2026_11_27_090000`). |
 | img | string (URL of pad onder `public/`) |
 | kcal_burned | unsigned integer |
 | difficulty | string (bv. "Makkelijk", "Gemiddeld", "Moeilijk") |
@@ -111,6 +111,11 @@ Een gast die `/` opent, gaat naar `/login`; een ingelogde gebruiker die `/login`
 ### `activity_comments` en `activity_likes`
 Reacties (`activity_id`, `user_id`, `body` max. 1000, timestamps) en likes (PK `activity_id` + `user_id`,
 timestamps), beide met cascade delete. Overgenomen uit de oude MySQL-database; er is nog geen UI voor.
+
+### `audit_logs`
+Logboek voor het admin-dashboard: `user_id` (FK → users, wordt `null` als het account verdwijnt), `action`
+(zie `AuditLog::ACTIONS`), `description`, `ip_address`, `created_at`. Schrijven via `AuditLog::record()`.
+Zie `docs/07-admin-dashboard.md`.
 
 ### Import uit de oude MySQL-database
 `php -d extension=pdo_mysql artisan upmove:import-mysql [--images=map]` kopieert gebruikers, voltooiingen,
@@ -169,7 +174,7 @@ posts (met afbeeldingen), reacties en likes uit XAMPP-database `bewegingsapp` (v
 - Scherm `#screen-leren` op home (`resources/views/challenges/screen.blade.php`, `?screen=leren`): alle
   challenges op ID met zoekveld (`resources/js/learn.js`, zoekt in titel, beschrijving en moeilijkheid).
 - `GET /leren/{challenge}` (`challenges.show`): beschrijvingspagina met afbeelding, moeilijkheid, kcal, XP
-  en `description_extra` (of `description` als die leeg is). Navbar-item "Leren" is daar actief.
+  en `description_extra`. Navbar-item "Leren" is daar actief.
 - Op home staat onder "Voltooien" de knop **Wat is dit?** naar de beschrijving van de huidige opdracht.
 - Animaties: kaarten schuiven in (`#screen-leren` in `app.css`) en een slide-overgang tussen lijst en
   beschrijving (`resources/css/learn-page-transition.css`, cross-document view transitions). `learn.js`

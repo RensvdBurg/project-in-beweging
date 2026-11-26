@@ -19,7 +19,8 @@ return new class extends Migration
             $table->unsignedBigInteger('challenge_interval');
             $table->timestamps();
 
-            $table->unique(['user_id', 'challenge_id', 'challenge_interval']);
+            // Eigen naam: de standaardnaam is langer dan de 64 tekens die MySQL toestaat.
+            $table->unique(['user_id', 'challenge_id', 'challenge_interval'], 'challenge_completions_unique');
         });
     }
 

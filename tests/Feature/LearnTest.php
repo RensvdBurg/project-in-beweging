@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Challenge;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class LearnTest extends TestCase
@@ -61,14 +62,10 @@ class LearnTest extends TestCase
             ->assertSeeInOrder([$challenge->title, $challenge->difficulty, $challenge->kcal_burned.' kcal', $challenge->xp_reward.' XP', 'Over deze challenge', 'Uitgebreide uitleg over deze challenge.']);
     }
 
-    public function test_description_falls_back_to_short_description(): void
+    public function test_challenges_no_longer_have_a_description_column(): void
     {
-        $challenge = Challenge::query()->firstOrFail();
-        $challenge->forceFill(['description' => 'Korte beschrijving.', 'description_extra' => null])->save();
-
-        $this->actingAs(User::factory()->create())
-            ->get(route('challenges.show', $challenge))
-            ->assertSee('Korte beschrijving.');
+        $this->assertFalse(Schema::hasColumn('challenges', 'description'));
+        $this->assertTrue(Schema::hasColumn('challenges', 'description_extra'));
     }
 
     public function test_coming_back_from_description_sets_back_transition_class(): void

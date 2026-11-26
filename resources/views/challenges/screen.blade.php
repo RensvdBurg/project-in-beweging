@@ -26,7 +26,7 @@
   @else
     <ul class="space-y-4" id="challenge-list">
       @foreach ($challenges as $index => $challenge)
-        <li data-search="{{ implode(' ', [$challenge->title, $challenge->description, $challenge->difficulty]) }}">
+        <li data-search="{{ implode(' ', [$challenge->title, $challenge->description_extra, $challenge->difficulty]) }}">
           <a href="{{ route('challenges.show', $challenge) }}"
             class="flex items-center gap-4 rounded-[20px] bg-surface p-3 shadow-card transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange"
             data-learn-transition>

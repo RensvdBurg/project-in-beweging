@@ -2,14 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Activity;
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\PhoneNotifications;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -116,10 +115,8 @@ class AccountController extends Controller
 
         $notifications->clear();
         Auth::logout();
-        $user->delete();
-
-        // Afbeeldingen van eigen activiteiten opruimen (de rijen verdwijnen via cascade).
-        Storage::disk(Activity::IMAGE_DISK)->deleteDirectory("activities/{$user->id}");
+        AuditLog::record('account_deleted', "{$user->username} heeft het eigen account verwijderd.");
+        $user->deleteAccount();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

@@ -62,6 +62,40 @@
             </section>
 
 
+            @if ($user->is_admin)
+                <!-- Alleen voor beheerders: naar het admin-dashboard. -->
+                <section class="mb-6">
+                    <h2 class="settings-label mb-2 px-0.5 text-[11px] font-extrabold uppercase tracking-wide text-[#5f6672]">
+                        Beheer
+                    </h2>
+
+                    <a href="{{ route('admin.dashboard') }}"
+                        class="settings-card group flex items-center gap-3 rounded-[18px] bg-white p-4 shadow-[0_4px_14px_rgba(20,28,38,0.05)] transition hover:bg-[#fafbfc] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-orange">
+                        <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange-soft text-orange"
+                            aria-hidden="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <rect x="4" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7" />
+                                <rect x="13" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7" />
+                                <rect x="4" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7" />
+                                <rect x="13" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7" />
+                            </svg>
+                        </span>
+
+                        <span class="min-w-0 flex-1">
+                            <span class="block text-[13px] font-bold">Admin dashboard</span>
+                            <span class="settings-description mt-0.5 block text-[11px] text-[#656c77]">Gebruikers, challenges, activiteiten en logs</span>
+                        </span>
+
+                        <svg class="shrink-0 text-[#656c77] transition group-hover:translate-x-0.5" width="18" height="18"
+                            viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="m9 18 6-6-6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </a>
+                </section>
+            @endif
+
+
             <!-- ===================================== -->
             <!-- BEWEGINGSDOELEN -->
             <!-- ===================================== -->

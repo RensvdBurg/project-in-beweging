@@ -15,4 +15,5 @@ Lees eerst `docs/03-architectuur.md` (routes, schema, bedrijfsregels) en `docs/0
 - Geen hardgecodeerde URL's: gebruik `route()` en `asset()`; assets via `@vite`.
 - Nieuwe JS-entrypoints toevoegen aan `input` in `vite.config.js`.
 - Geen externe CDN's nodig maken voor kernfunctionaliteit: de app moet offline werken.
-- Na wijzigingen: `php artisan test` en `vendor/bin/pint`.
+- Na wijzigingen: `php artisan test`, `vendor/bin/pint` en `vendor/bin/phpstan analyse`
+  (dezelfde checks draaien in de CI-pipeline, `.github/workflows/ci.yml`).

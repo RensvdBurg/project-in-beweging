@@ -1,0 +1,12 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app/
+        - database/
+        - routes/
+        - config/
+
+    # Niveau 5 is een goede balans; verhoog stapsgewijs zodra de code dat toelaat.
+    level: 5

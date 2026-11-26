@@ -1,5 +1,8 @@
 # 02 · Migratieplan vanilla PHP → Laravel 13 + NativePHP Mobile
 
+> **Historisch.** Dit plan ging uit van een SQLite-database op elk toestel. Inmiddels staan alle gegevens
+> in MySQL op de server en praat de app via de API (zie `08-api.md`).
+
 ## Uitgangspunten
 
 1. **Functioneel gelijk**: alle bestaande functionaliteit (zie `01-analyse-vanilla-php.md`) blijft werken,

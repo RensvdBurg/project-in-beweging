@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 /**
  * Kopieert gebruikers, voltooiingen, posts, reacties, likes en instellingen uit de
- * oude MySQL-database `bewegingsapp` naar de (lokale) SQLite-database.
+ * oude MySQL-database `bewegingsapp` naar de database van de app (`upmove`).
  *
  * De challenges zelf staan al in een migratie. Bestaande gebruikers (zelfde id,
  * e-mail of gebruikersnaam) worden overgeslagen en bestaande instellingen niet
@@ -22,7 +22,7 @@ class ImportBewegingsappCommand extends Command
     protected $signature = 'upmove:import-mysql
         {--images= : Map met de afbeeldingen van activity_posts}';
 
-    protected $description = 'Importeer de data uit de MySQL-database bewegingsapp in SQLite';
+    protected $description = 'Importeer de data uit de oude MySQL-database bewegingsapp in de app-database';
 
     private const DEFAULT_IMAGE_DIR = 'C:/xampp/htdocs/project-in-beweging/uploads/activiteiten';
 

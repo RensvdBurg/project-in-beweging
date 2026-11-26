@@ -61,8 +61,8 @@ class UserRequest extends FormRequest
     }
 
     /**
-     * Uniek zonder op hoofdletters te letten (SQLite vergelijkt hoofdlettergevoelig);
-     * bij bewerken telt de gebruiker zelf niet mee.
+     * Uniek zonder op hoofdletters te letten ("Sanne" mag niet naast "sanne"), ongeacht de
+     * collatie van de database; bij bewerken telt de gebruiker zelf niet mee.
      */
     private function uniqueIgnoringCase(string $column): Closure
     {

@@ -84,8 +84,9 @@ class User extends Authenticatable
     /**
      * Ranglijstvolgorde: meeste XP eerst; bij gelijke XP op gebruikersnaam en daarna ID.
      *
-     * LOWER() omdat SQLite standaard hoofdlettergevoelig sorteert, terwijl de oude
-     * MySQL-database (utf8mb4_unicode_ci) dat niet deed. Gebruikersnamen zijn ASCII.
+     * LOWER(): hoofdletters tellen niet mee, ongeacht de collatie van de database
+     * (MySQL met utf8mb4_unicode_ci doet dat al; zo blijft het ook elders gelijk).
+     * Gebruikersnamen zijn ASCII.
      *
      * @param  Builder<User>  $query
      */

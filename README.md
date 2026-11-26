@@ -3,28 +3,39 @@
 Jongeren die leren voor een zittend beroep, zoals programmeren, lopen risico op gezondheidsproblemen door
 langdurig zitten. UpMove stimuleert gezonde gewoontes door leerdoelen te combineren met korte beweegpauzes.
 
-Gebouwd met **Laravel 13**, **Tailwind CSS 4** en **NativePHP Mobile 4** (iOS + Android).
+Gebouwd met **Laravel 13**, **Tailwind CSS 4** en **NativePHP Mobile 4** (iOS + Android). Alle gegevens staan
+in **MySQL** op de server; de app haalt ze via de API (`docs/08-api.md`).
 
 ## Installeren
+
+1. Start MySQL (XAMPP Control Panel) en maak een lege database `upmove` aan
+   (`utf8mb4_unicode_ci`, bijv. in phpMyAdmin). Voor de tests ook `upmove_testing`.
+2. Zorg dat PHP `pdo_mysql` laadt: haal in je `php.ini` de `;` weg voor `extension=pdo_mysql`.
+3. Daarna:
 
 ```bash
 composer install
 npm install
-cp .env.example .env
+cp .env.example .env           # DB_CONNECTION=mysql, DB_DATABASE=upmove
 php artisan key:generate
-php artisan migrate --seed     # maakt database/database.sqlite + testaccount
+php artisan migrate --seed     # tabellen + challenges + testaccount
+php artisan upmove:admin test  # optioneel: testaccount beheerder maken (/admin)
 ```
 
 Testaccount: gebruikersnaam `test` (of `test@example.com`), wachtwoord `password`.
 
 ## Ontwikkelen in de browser
 
+De pagina's halen hun gegevens bij de API. `php artisan serve` verwerkt maar één verzoek tegelijk, dus start
+de API en de app als twee servers (zet in `.env`: `UPMOVE_API_URL=http://127.0.0.1:8124/api/v1`):
+
 ```bash
-php artisan serve      # http://127.0.0.1:8000
-npm run dev            # Vite + Tailwind met hot reload (altijd aan laten staan tijdens het coderen)
+php artisan serve --port=8124  # API (+ admin-dashboard)
+php artisan serve              # de app: http://127.0.0.1:8000
+npm run dev                    # Vite + Tailwind met hot reload (altijd aan laten staan tijdens het coderen)
 ```
 
-Of alles tegelijk: `composer run dev`.
+Het admin-dashboard staat op `/admin`.
 
 ## Draaien als mobiele app
 
@@ -37,7 +48,7 @@ php artisan native:run
 ## Testen
 
 ```bash
-php artisan test
+php artisan test               # gebruikt de MySQL-database upmove_testing (zie phpunit.xml)
 ```
 
 ## Iconen

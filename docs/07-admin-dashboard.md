@@ -62,8 +62,7 @@ Wordt bijgehouden bij: inloggen, mislukte login, uitloggen, registreren, eigen a
 challenge voltooien, activiteit plaatsen en elke wijziging in het dashboard. Logregels blijven bestaan
 als het account wordt verwijderd (`user_id` wordt `null`). Er worden geen wachtwoorden gelogd.
 
-## Let op: één database per toestel
+## Eén centrale database
 
-In de NativePHP-app heeft elk toestel een eigen SQLite-database. Het dashboard toont dus alleen de
-gegevens van de database waarop het draait (bijv. de browserversie via `php artisan serve`, of één
-telefoon). Een centraal overzicht van álle gebruikers vraagt om een gedeelde server/API.
+Het dashboard draait op de server en leest rechtstreeks uit MySQL: je ziet alle gebruikers, challenges,
+activiteiten en logs van de app. Een challenge die je hier toevoegt, zien alle telefoons direct via de API.

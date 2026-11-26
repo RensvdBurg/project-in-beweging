@@ -1,5 +1,9 @@
 # 03 · Architectuur van de Laravel-versie
 
+> Alle gegevens staan in **MySQL** op de server. De controllers hieronder (de schermen van de app) halen ze
+> via de API op met `App\Services\Api\UpMoveApi`; de API-controllers staan in `app/Http/Controllers/Api/V1`.
+> Zie `docs/08-api.md`.
+
 ## Overzicht
 
 ```
@@ -149,8 +153,7 @@ posts (met afbeeldingen), reacties en likes uit XAMPP-database `bewegingsapp` (v
   De controller geeft dan `{html, error}` terug: de bijgewerkte `<x-community-card>` (422 bij een lege
   reactie), en het script vervangt de kaart op zijn plek. Mislukt de fetch, dan wordt het formulier
   gewoon verstuurd (met herladen).
-- **Let op:** in de NativePHP-app heeft elk toestel een eigen SQLite-database. Zonder centrale server
-  ziet een gebruiker op de telefoon dus alleen activiteiten die op dat toestel zijn aangemaakt.
+- Activiteiten staan op de server: iedereen ziet dezelfde feed, op elke telefoon.
 - **Afbeelding kiezen**: in de browser een gewone bestandsupload; in de NativePHP-app de native
   galerijkiezer (`nativephp/mobile-camera`). Die geeft een pad op het toestel terug (`native_image_path`).
   Dat pad wordt alleen geaccepteerd in de app, alleen uit de map `Gallery/` van de plugin met de naam
@@ -161,8 +164,8 @@ posts (met afbeeldingen), reacties en likes uit XAMPP-database `bewegingsapp` (v
 
 - Eén pagina (`resources/views/auth/login.blade.php`) met twee panelen; `resources/js/login.js` wisselt
   zonder herladen en regelt de knop "Wachtwoord tonen". Meldingen via `auth/partials/message.blade.php`.
-- Inloggen met e-mailadres of gebruikersnaam, **zonder op hoofdletters te letten** (`LOWER()`; SQLite
-  vergelijkt standaard hoofdlettergevoelig). Registreren weigert ook "Sanne" als "sanne" al bestaat.
+- Inloggen met e-mailadres of gebruikersnaam, **zonder op hoofdletters te letten** (`LOWER()`, werkt
+  ongeacht de collatie van de database). Registreren weigert ook "Sanne" als "sanne" al bestaat.
 - Inlogbeveiliging (zoals vroeger `login_rate_limits`): max. 5 mislukte pogingen per account en 30 per
   IP-adres per 15 minuten, via Laravels `RateLimiter` (cache-driver `database`). Een geslaagde login zet
   de teller van dat account terug.
@@ -186,13 +189,12 @@ posts (met afbeeldingen), reacties en likes uit XAMPP-database `bewegingsapp` (v
 
 - Scherm `#screen-ranglijst` op home (`resources/views/leaderboard/screen.blade.php`), geopend via de
   navbar of `?screen=ranglijst`: podium (2-1-3), top 10 en "Jouw positie" als je buiten de top 10 valt.
-- Volgorde: `User::leaderboard()` — meeste XP, dan gebruikersnaam (hoofdletterongevoelig via `LOWER()`,
-  zoals vroeger in MySQL; SQLite sorteert standaard hoofdlettergevoelig), dan ID.
+- Volgorde: `User::leaderboard()` — meeste XP, dan gebruikersnaam (hoofdletterongevoelig via `LOWER()`),
+  dan ID.
   `User::leaderboardRank()` telt met dezelfde regels.
 - Profiel `/profiel/{user}`: initialen, "Over mij", totaal XP, rang en de activiteiten van die gebruiker
   (`<x-community-card>`, 5 per pagina). De gebruikersnaam op een activiteitkaart linkt naar het profiel.
-- **Let op:** in de app heeft elk toestel een eigen SQLite-database; de ranglijst toont dus alleen
-  gebruikers die op dat toestel staan.
+- De ranglijst komt van de server en is voor iedereen gelijk.
 
 ## Bedrijfsregels (`ChallengeService`)
 

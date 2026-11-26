@@ -13,6 +13,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
+/**
+ * @property array<string, mixed>|null $settings Opgeslagen instellingen (JSON, via de 'array'-cast).
+ */
 #[Fillable(['email', 'username', 'password', 'full_name', 'birth_date'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable

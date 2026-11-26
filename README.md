@@ -222,35 +222,11 @@ database en sessies. Eén synthetische opdracht voorkomt willekeurige selectie.
 Syntaxchecks zijn geen uitgebreide statische analyse. De aanvullende browser-, upload-,
 concurrentie- en migratiecontroles staan hieronder beschreven. De npm-audit scant dependencies, geen PHP-code.
 
-### GitHub Actions en branchbeveiliging
-
-`.github/workflows/ci.yml` draait bij pushes en PR's naar develop, test, release en
-main, dus ook PR's vanuit feature/*, feat/* en fix/*. De workflow heeft alleen
-contents: read, tijdslimieten, annulering van verouderde runs en een tijdelijke
-MariaDB-service. Tests, buildfouten en high/critical-auditbevindingen blokkeren CI.
-
-Stel na de eerste echte Actions-run verplichte PR-review en deze statuschecks in:
-
-- `PHP syntax, CSS build and login smoke` (omvat ook de database-integratietests)
-- `npm security audit`
-
-Bescherm develop, test, release en main. Promoveer via develop -> test -> release ->
-main en breng fixes terug naar develop. Maak de PR actueel met de doelbranch.
-De workflow wijzigt zelf geen repositoryregels en dwingt de bronbranch niet af.
-Actions en de gebruikte Actions moeten zijn toegestaan binnen de organisatie.
-
-Action-configuratie is gecontroleerd bij de officiële repositories:
-[checkout](https://github.com/actions/checkout),
-[setup-node](https://github.com/actions/setup-node) en
-[setup-php](https://github.com/shivammathur/setup-php).
-De workflow is lokaal te valideren met [actionlint](https://github.com/rhysd/actionlint):
-`actionlint .github/workflows/ci.yml`.
-
 ### Deployment
 
 Er is geen deploymentworkflow. Daarvoor ontbreken hostingdoel, staging/production,
-authenticatie, secretbeheer, migratie- en rollbackafspraken. Deploy pas na succesvolle
-CI. Behoud uploads en lever de buildassets mee. Tests, scripts en databaseschema's
+authenticatie, secretbeheer, migratie- en rollbackafspraken.
+Behoud uploads en lever de buildassets mee. Tests, scripts en databaseschema's
 horen niet in een publiek toegankelijke productie-documentroot.
 
 ## Uitgebreide CI-controles

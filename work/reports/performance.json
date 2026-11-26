@@ -1,6 +1,0 @@
-{
-  "requests": 30,
-  "concurrency": 5,
-  "p95Ms": 50.17639999999665,
-  "budgetMs": 2000
-}

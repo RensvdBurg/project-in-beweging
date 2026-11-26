@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -7,6 +8,8 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     /**
      * Voegt de kolom `description_extra` toe en zet de 50 challenges uit de oude
      * MySQL-database `bewegingsapp` erbij, met hun oorspronkelijke id's.

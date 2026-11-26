@@ -32,6 +32,7 @@ Tokens zijn Laravel Sanctum-tokens (tabel `personal_access_tokens`), één per t
 | POST | `/register` | `email`, `username`, `full_name`, `password`, `password_confirmation`, `birth_date` (Y-m-d) → 201 `{token, user}` |
 | POST | `/login` | `login`, `password` → `{token, user}` |
 | POST | `/logout` | trekt alleen het token van deze telefoon in |
+| GET | `/home` | alles voor het home-scherm in één verzoek |
 | GET | `/me` | eigen gegevens (incl. e-mail, geboortedatum, instellingen) + `rank` |
 | PUT | `/me/profile` | `full_name`, `username`, `email` |
 | PUT | `/me/about` | `about_me` (max. 500) |
@@ -62,8 +63,39 @@ Een activiteit bevat `user`, `likes_count`, `comments_count`, `liked_by_viewer`,
 `routes/api.php`, `app/Http/Controllers/Api/V1/`, `app/Http/Resources/`, tests in `tests/Feature/Api/`.
 De challengeregels blijven in `ChallengeService`; de API roept die aan.
 
-## Nog niet gedaan
+## Hoe de app de API gebruikt
 
-De schermen van de app lezen nog rechtstreeks uit de database. De volgende stap is dat de app deze API
-gebruikt (token in `SecureStorage`), zodat er op de telefoon geen gegevens meer in SQLite staan.
-NativePHP maakt op de telefoon zelf altijd een (lege) SQLite-database aan; dat is niet uit te zetten.
+De schermen (controllers in `app/Http/Controllers`, views ongewijzigd) lezen niets uit een database:
+
+| Onderdeel | Wat het doet |
+|---|---|
+| `App\Services\Api\UpMoveApi` | één methode per actie (`home()`, `toggleLike()`, `updateProfile()`, …) |
+| `App\Services\Api\ApiClient` | HTTP naar `UPMOVE_API_URL` met het token; fouten worden `ApiException` |
+| `App\Services\Api\ApiHydrator` | zet JSON om naar `User`/`Challenge`/`Activity`-modellen (alleen in het geheugen) zodat de views hetzelfde blijven |
+| `App\Auth\ApiSessionGuard` | de `web`-guard (`config/auth.php`): token + gebruiker in de sessie, op de telefoon ook in SecureStorage |
+| `bootstrap/app.php` | `ApiException`: 401 → uitloggen en naar login · 403/404 → foutpagina · geen verbinding → `errors.offline` |
+
+`GET /api/v1/home` geeft alles voor het home-scherm in één verzoek (gebruiker, challenge, eerste 5 van de
+community, ranglijst, alle challenges). Het admin-dashboard gebruikt dezelfde login maar leest op de server
+rechtstreeks uit MySQL; `EnsureUserIsAdmin` controleert `is_admin` in de database.
+
+## Lokaal ontwikkelen in de browser
+
+PHP's ingebouwde server verwerkt op Windows maar één verzoek tegelijk; een pagina die zijn eigen API aanroept
+blijft dan wachten. Start daarom twee servers (vanuit de map `public`):
+
+```bash
+# API
+php -d extension=pdo_mysql -S 127.0.0.1:8124 ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
+# App, die de API hierboven gebruikt (in .env: UPMOVE_API_URL=http://127.0.0.1:8124/api/v1)
+php -d extension=pdo_mysql -S 127.0.0.1:8000 ../vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php
+```
+
+Op een echte server (Apache/Nginx) is dit niet nodig.
+
+## Tests
+
+In tests (`UPMOVE_API_IN_PROCESS=true` in `phpunit.xml`) handelt `ApiClient` API-verzoeken af in hetzelfde
+proces; `Tests\TestCase::actingAs()` geeft de gebruiker een echt token. Zo test elke schermtest het hele pad
+scherm → API → MySQL. `tests/Feature/AppUsesApiTest.php` test de app met echte (nagebootste) HTTP: o.a. dat het
+home-scherm geen enkele databasequery doet, de offline-pagina en het opnieuw inloggen via SecureStorage.

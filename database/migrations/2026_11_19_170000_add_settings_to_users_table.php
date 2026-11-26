@@ -1,11 +1,14 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     /**
      * Instellingen per gebruiker (frequentie, dagdoel, schakelaars, werk/school),
      * als JSON. Zie App\Support\UserSettings voor de standaardwaarden.

@@ -1,10 +1,13 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     /**
      * Afbeeldingen van de vijf oude standaard-challenges die niet (meer) gebruikt worden.
      * De bestanden hebben nooit in de app gezeten.

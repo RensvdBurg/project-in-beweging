@@ -1,10 +1,13 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     /**
      * Vervangt de Unsplash-links van de challenges uit `bewegingsapp` door lokale
      * kopieën in public/images/challenges, zodat de afbeeldingen ook offline werken.

@@ -16,6 +16,10 @@ Lees eerst `docs/03-architectuur.md` (routes, schema, bedrijfsregels) en `docs/0
 - Challenge-logica hoort in `app/Services/ChallengeService.php`, niet in controllers of views.
 - Geen hardgecodeerde URL's: gebruik `route()` en `asset()`; assets via `@vite`.
 - Nieuwe JS-entrypoints toevoegen aan `input` in `vite.config.js`.
-- Geen externe CDN's nodig maken voor kernfunctionaliteit: de app moet offline werken.
+- Schermen van de app halen gegevens via `App\Services\Api\UpMoveApi`, nooit rechtstreeks met Eloquent/DB
+  (dat mag alleen in de API-controllers, `ChallengeService` en het admin-dashboard, die op de server draaien).
+  Nieuwe migraties met app-gegevens krijgen `use ServerOnlyMigration;`.
+- Geen externe CDN's nodig maken voor kernfunctionaliteit. De app heeft internet nodig voor gegevens, maar
+  scripts, lettertypen en afbeeldingen van de app zelf moeten lokaal gebundeld blijven.
 - Na wijzigingen: `php artisan test`, `vendor/bin/pint` en `vendor/bin/phpstan analyse --memory-limit=1G`
   (MySQL moet draaien en PHP moet `pdo_mysql` laden; zie `docs/08-api.md`).

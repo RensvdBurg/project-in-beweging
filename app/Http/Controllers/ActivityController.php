@@ -3,17 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\Activity;
-use App\Models\AuditLog;
+use App\Services\Api\ApiException;
+use App\Services\Api\UpMoveApi;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Validator as ValidatorInstance;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
+/**
+ * Eigen activiteiten. Ophalen en plaatsen gaat via de API; de afbeelding gaat als
+ * bestand mee en wordt op de server bewaard.
+ */
 class ActivityController extends Controller
 {
     /**
@@ -31,16 +33,18 @@ class ActivityController extends Controller
         'image/heic' => 'heic',
     ];
 
+    public function __construct(private readonly UpMoveApi $api) {}
+
     /**
      * Formulier om een activiteit toe te voegen + overzicht van de laatste vijf.
      */
-    public function index(Request $request): View
+    public function index(): View
     {
-        $user = $request->user();
+        $latest = $this->api->myActivities(1, self::PER_PAGE);
 
         return view('activities.index', [
-            'activities' => $user->activities()->latest()->latest('id')->limit(self::PER_PAGE)->get(),
-            'activityCount' => $user->activities()->count(),
+            'activities' => $latest->getCollection(),
+            'activityCount' => $latest->total(),
             'isNative' => $this->runningInNativeApp(),
             'statusMessage' => session('status_message', ''),
             'statusType' => session('status_type', 'success'),
@@ -53,13 +57,11 @@ class ActivityController extends Controller
      */
     public function all(Request $request): View|RedirectResponse
     {
-        $user = $request->user();
+        $activities = $this->api->myActivities(max(1, $request->integer('page', 1)), self::PER_PAGE);
 
-        if ($user->activities()->count() <= self::PER_PAGE) {
+        if ($activities->total() <= self::PER_PAGE) {
             return redirect()->route('activities.index');
         }
-
-        $activities = $user->activities()->latest()->latest('id')->paginate(self::PER_PAGE);
 
         if ($activities->isEmpty() && $activities->currentPage() > 1) {
             return redirect()->route('activities.all', ['page' => $activities->lastPage()]);
@@ -70,66 +72,62 @@ class ActivityController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        // De afbeelding controleren we hier al, zodat een te groot bestand niet eerst naar de server gaat.
         $validator = Validator::make($request->all(), [
-            'title' => ['required', 'string', 'max:150'],
-            'description' => ['required', 'string', 'max:2000'],
             'image' => ['nullable', 'file', 'mimetypes:'.implode(',', array_keys(self::IMAGE_MIME_TYPES)), 'max:'.self::MAX_IMAGE_KILOBYTES],
             'native_image_path' => ['nullable', 'string'],
         ], [
-            'title.required' => 'Vul een titel in.',
-            'title.max' => 'De titel mag maximaal 150 tekens bevatten.',
-            'description.required' => 'Vul een beschrijving in.',
-            'description.max' => 'De beschrijving mag maximaal 2000 tekens bevatten.',
             'image.uploaded' => 'De afbeelding kon niet worden geüpload. Kies een kleinere afbeelding.',
             'image.max' => 'De afbeelding mag maximaal 10 MB groot zijn.',
             'image.*' => 'Kies een afbeelding (JPG, PNG, WebP, GIF of HEIC).',
         ]);
 
-        $nativeImage = null;
-
-        $validator->after(function (ValidatorInstance $validator) use ($request, &$nativeImage): void {
-            if ($request->filled('native_image_path') && ! $request->hasFile('image')) {
-                $nativeImage = $this->resolveNativeImage((string) $request->input('native_image_path'));
-
-                if ($nativeImage === null) {
-                    $validator->errors()->add('native_image_path', 'De gekozen afbeelding kon niet worden gelezen. Kies een andere afbeelding.');
-                }
-            }
-        });
-
         if ($validator->fails()) {
-            return redirect()->route('activities.index')
-                ->withInput($request->only('title', 'description'))
-                ->with(['status_message' => $validator->errors()->first(), 'status_type' => 'error']);
+            return $this->backWithError($request, $validator->errors()->first());
         }
 
-        $user = $request->user();
-        $imagePath = null;
+        $image = null;
 
         if ($request->hasFile('image')) {
-            $imagePath = $this->storeUploadedImage($request->file('image'), $user->id);
-        } elseif ($nativeImage !== null) {
-            $imagePath = $this->storeNativeImage($nativeImage, $user->id);
+            $file = $request->file('image');
+            $image = ['path' => (string) $file->getRealPath(), 'name' => $file->getClientOriginalName() ?: 'afbeelding.jpg'];
+        } elseif ($request->filled('native_image_path')) {
+            $image = $this->resolveNativeImage((string) $request->input('native_image_path'));
+
+            if ($image === null) {
+                return $this->backWithError($request, 'De gekozen afbeelding kon niet worden gelezen. Kies een andere afbeelding.');
+            }
         }
 
-        $activity = $user->activities()->create([
-            'title' => trim($request->string('title')),
-            'description' => trim($request->string('description')),
-            'image_path' => $imagePath,
-        ]);
+        try {
+            $message = $this->api->storeActivity(
+                trim((string) $request->input('title', '')),
+                trim((string) $request->input('description', '')),
+                $image,
+            );
+        } catch (ApiException $exception) {
+            if ($exception->isUnauthenticated() || $exception->isConnectionError()) {
+                throw $exception;
+            }
 
-        AuditLog::record('activity_created', "{$user->username} heeft de activiteit \"{$activity->title}\" geplaatst.", $user);
+            return $this->backWithError($request, $exception->firstError());
+        } finally {
+            // De camera-plugin ruimt zijn kopie niet zelf op.
+            if ($image !== null && $request->filled('native_image_path') && ! $request->hasFile('image')) {
+                @unlink($image['path']);
+            }
+        }
 
         return redirect()->route('activities.index')->with([
-            'status_message' => 'Je activiteit is toegevoegd.',
+            'status_message' => $message,
             'status_type' => 'success',
         ]);
     }
 
     /**
      * Serveert de afbeelding van een activiteit via een ondertekende URL
-     * (zie Activity::imageUrl()). Draait zonder sessie-middleware, dus zonder
-     * route model binding: we zoeken alleen het pad op.
+     * (zie Activity::imageUrl()). Draait op de server, zonder sessie-middleware,
+     * dus zonder route model binding: we zoeken alleen het pad op.
      */
     public function image(int $activity): StreamedResponse
     {
@@ -143,31 +141,11 @@ class ActivityController extends Controller
         ]);
     }
 
-    private function storeUploadedImage(UploadedFile $file, int $userId): string
+    private function backWithError(Request $request, string $message): RedirectResponse
     {
-        $extension = self::IMAGE_MIME_TYPES[$file->getMimeType()] ?? 'jpg';
-
-        return $file->storeAs("activities/{$userId}", Str::uuid().'.'.$extension, Activity::IMAGE_DISK);
-    }
-
-    /**
-     * @param  array{path: string, extension: string}  $image
-     */
-    private function storeNativeImage(array $image, int $userId): string
-    {
-        $path = "activities/{$userId}/".Str::uuid().'.'.$image['extension'];
-
-        $stream = fopen($image['path'], 'rb');
-        Storage::disk(Activity::IMAGE_DISK)->put($path, $stream);
-
-        if (is_resource($stream)) {
-            fclose($stream);
-        }
-
-        // De camera-plugin ruimt zijn kopie niet zelf op.
-        @unlink($image['path']);
-
-        return $path;
+        return redirect()->route('activities.index')
+            ->withInput($request->only('title', 'description'))
+            ->with(['status_message' => $message, 'status_type' => 'error']);
     }
 
     /**
@@ -177,7 +155,7 @@ class ActivityController extends Controller
      * alleen in de native app, alleen uit de map "Gallery" van de plugin, alleen
      * bestanden met de naam die de plugin zelf geeft, en alleen echte afbeeldingen.
      *
-     * @return array{path: string, extension: string}|null
+     * @return array{path: string, name: string}|null
      */
     private function resolveNativeImage(string $path): ?array
     {
@@ -200,7 +178,7 @@ class ActivityController extends Controller
         $mimeType = (new \finfo(FILEINFO_MIME_TYPE))->file($realPath);
         $extension = self::IMAGE_MIME_TYPES[$mimeType] ?? null;
 
-        return $extension !== null ? ['path' => $realPath, 'extension' => $extension] : null;
+        return $extension !== null ? ['path' => $realPath, 'name' => 'afbeelding.'.$extension] : null;
     }
 
     private function runningInNativeApp(): bool

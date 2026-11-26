@@ -1,11 +1,14 @@
 <?php
 
+use App\Auth\ApiSessionGuard;
 use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Services\Api\ApiException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -36,6 +39,42 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // Fouten van de API (de app haalt al zijn gegevens bij de server).
+        $exceptions->render(function (ApiException $exception, Request $request) {
+            // Token ingetrokken of verlopen: lokaal uitloggen en opnieuw laten inloggen.
+            if ($exception->isUnauthenticated()) {
+                $guard = Auth::guard();
+
+                if ($guard instanceof ApiSessionGuard) {
+                    $guard->logout();
+                }
+
+                if ($request->expectsJson()) {
+                    return response()->json(['message' => $exception->getMessage()], 401);
+                }
+
+                return redirect()->route('login')->with([
+                    'auth_message' => 'Je sessie is verlopen. Log opnieuw in.',
+                    'auth_message_type' => 'error',
+                    'auth_mode' => 'login',
+                ]);
+            }
+
+            if (in_array($exception->status, [403, 404], true)) {
+                abort($exception->status, $exception->getMessage());
+            }
+
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $exception->getMessage()], 503);
+            }
+
+            // Geen verbinding (of een fout op de server): nette pagina met "Opnieuw proberen".
+            return response()->view('errors.offline', [
+                'message' => $exception->getMessage(),
+                'retryUrl' => $request->isMethod('GET') ? $request->fullUrl() : url()->previous(route('home')),
+            ], 503);
+        });
 
         // Verlopen CSRF-token: geen kale 419-pagina, maar terug met een duidelijke melding
         // (zelfde meldingen als in de vanilla PHP-versie). Laravel zet de

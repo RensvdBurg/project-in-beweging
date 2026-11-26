@@ -2,20 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AuditLog;
-use App\Models\User;
+use App\Auth\ApiSessionGuard;
+use App\Services\Api\ApiException;
+use App\Services\Api\UpMoveApi;
 use App\Services\PhoneNotifications;
-use Closure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 
+/**
+ * Inloggen, registreren en uitloggen. De controle gebeurt door de API (op de server);
+ * deze controller toont alleen de meldingen, zoals voorheen.
+ */
 class AuthController extends Controller
 {
+    public function __construct(private readonly UpMoveApi $api) {}
+
     /**
      * Login- en registratiescherm (één pagina met twee panelen).
      */
@@ -27,13 +30,6 @@ class AuthController extends Controller
             'activeAuthMode' => session('auth_mode', 'login'),
         ]);
     }
-
-    /** Maximaal 5 mislukte pogingen per account en 30 per IP-adres, per 15 minuten (zoals vroeger). */
-    private const MAX_ATTEMPTS_PER_ACCOUNT = 5;
-
-    private const MAX_ATTEMPTS_PER_IP = 30;
-
-    private const ATTEMPT_WINDOW_SECONDS = 900;
 
     /**
      * Inloggen met e-mailadres óf gebruikersnaam (hoofdletters maken niet uit).
@@ -48,122 +44,51 @@ class AuthController extends Controller
                 ->withInput($request->only('email'));
         }
 
-        // Pogingen tellen via de cache (database-driver: werkt ook met SQLite op het toestel).
-        $limits = [
-            'login:account:'.sha1(mb_strtolower($identifier)) => self::MAX_ATTEMPTS_PER_ACCOUNT,
-            'login:ip:'.$request->ip() => self::MAX_ATTEMPTS_PER_IP,
-        ];
-
-        foreach ($limits as $key => $maxAttempts) {
-            if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
-                $minutes = max(1, (int) ceil(RateLimiter::availableIn($key) / 60));
-                $unit = $minutes === 1 ? 'minuut' : 'minuten';
-
-                return $this->redirectWithMessage("Te veel inlogpogingen. Probeer het over {$minutes} {$unit} opnieuw.", 'error', 'login')
-                    ->withInput($request->only('email'));
-            }
-        }
-
-        // LOWER(): SQLite vergelijkt standaard hoofdlettergevoelig, de oude MySQL-database niet.
-        $lowered = mb_strtolower($identifier);
-        $user = User::query()
-            ->whereRaw('LOWER(email) = ?', [$lowered])
-            ->orWhereRaw('LOWER(username) = ?', [$lowered])
-            ->first();
-
-        if ($user === null || ! Hash::check($password, $user->password)) {
-            foreach (array_keys($limits) as $key) {
-                RateLimiter::hit($key, self::ATTEMPT_WINDOW_SECONDS);
-            }
-
-            AuditLog::record('login_failed', 'Mislukte inlogpoging voor "'.mb_substr($identifier, 0, 100).'".', $user);
-
-            return $this->redirectWithMessage('E-mailadres/gebruikersnaam of wachtwoord is onjuist.', 'error', 'login')
+        try {
+            $result = $this->api->login($identifier, $password, $this->deviceName());
+        } catch (ApiException $exception) {
+            return $this->redirectWithMessage($exception->firstError(), 'error', 'login')
                 ->withInput($request->only('email'));
         }
 
-        // Gelukt: de teller van dit account mag weer op nul.
-        RateLimiter::clear(array_key_first($limits));
-
-        Auth::login($user);
-        $request->session()->regenerate();
-        AuditLog::record('login', "{$user->username} is ingelogd.", $user);
+        $this->guard()->login($result['token'], $result['user']);
 
         return redirect()->route('home');
     }
 
     public function register(Request $request): RedirectResponse
     {
-        $passwordBytes = function (string $attribute, mixed $value, Closure $fail): void {
-            if (! is_string($value) || strlen($value) < 8 || strlen($value) > 72) {
-                $fail('Kies een wachtwoord van minimaal 8 en maximaal 72 letters.');
-            }
-        };
+        $day = filter_var($request->input('day'), FILTER_VALIDATE_INT);
+        $month = filter_var($request->input('month'), FILTER_VALIDATE_INT);
+        $year = filter_var($request->input('year'), FILTER_VALIDATE_INT);
+        $birthDate = $day !== false && $month !== false && $year !== false && checkdate($month, $day, $year)
+            ? sprintf('%04d-%02d-%02d', $year, $month, $day)
+            : '';
 
-        $birthDate = function (string $attribute, mixed $value, Closure $fail) use ($request): void {
-            $day = filter_var($request->input('day'), FILTER_VALIDATE_INT);
-            $month = filter_var($request->input('month'), FILTER_VALIDATE_INT);
-            $year = filter_var($request->input('year'), FILTER_VALIDATE_INT);
-
-            if (
-                $day === false || $month === false || $year === false
-                || $year < (int) now()->format('Y') - 110
-                || ! checkdate($month, $day, $year)
-                || sprintf('%04d-%02d-%02d', $year, $month, $day) > now()->toDateString()
-            ) {
-                $fail('Kies een geldige geboortedatum.');
-            }
-        };
-
-        $validator = Validator::make($request->all(), [
-            'email' => ['bail', 'required', 'string', 'email', 'max:254', $this->uniqueIgnoringCase('email')],
-            'username' => ['bail', 'required', 'string', 'regex:/\A[A-Za-z0-9_.-]{3,30}\z/', $this->uniqueIgnoringCase('username')],
-            'fullName' => ['required', 'string', 'max:150'],
-            'password' => ['bail', 'required', $passwordBytes],
-            'confirmPassword' => ['same:password'],
-            'day' => ['bail', 'required', $birthDate],
-        ], [
-            // Per regel (geen "email.*"): anders overschrijft die de melding "al in gebruik".
-            'email.required' => 'Vul een geldig e-mailadres in.',
-            'email.string' => 'Vul een geldig e-mailadres in.',
-            'email.email' => 'Vul een geldig e-mailadres in.',
-            'email.max' => 'Vul een geldig e-mailadres in.',
-            'username.required' => 'Je gebruikersnaam moet 3 tot 30 tekens bevatten (letters, cijfers, punt, streepje of underscore).',
-            'username.string' => 'Je gebruikersnaam moet 3 tot 30 tekens bevatten (letters, cijfers, punt, streepje of underscore).',
-            'username.regex' => 'Je gebruikersnaam moet 3 tot 30 tekens bevatten (letters, cijfers, punt, streepje of underscore).',
-            'fullName.*' => 'Vul een naam van maximaal 150 tekens in.',
-            'password.required' => 'Kies een wachtwoord van minimaal 8 en maximaal 72 letters.',
-            'confirmPassword.same' => 'Wachtwoorden komen niet overeen.',
-            'day.required' => 'Kies een geldige geboortedatum.',
-        ]);
-
-        if ($validator->fails()) {
+        try {
+            $result = $this->api->register([
+                'email' => trim((string) $request->input('email', '')),
+                'username' => trim((string) $request->input('username', '')),
+                'full_name' => trim((string) $request->input('fullName', '')),
+                'password' => (string) $request->input('password', ''),
+                'password_confirmation' => (string) $request->input('confirmPassword', ''),
+                'birth_date' => $birthDate,
+                'device_name' => $this->deviceName(),
+            ]);
+        } catch (ApiException $exception) {
             // Wachtwoorden nooit terugzetten; een bezet of ongeldig e-mailadres of gebruikersnaam
             // ook niet, zodat de gebruiker direct ziet welk veld opnieuw moet (zoals vroeger).
-            $failedField = $validator->errors()->keys()[0] ?? null;
             $except = ['password', 'confirmPassword'];
 
-            if (in_array($failedField, ['email', 'username'], true)) {
-                $except[] = $failedField;
+            if (in_array($exception->firstErrorField(), ['email', 'username'], true)) {
+                $except[] = $exception->firstErrorField();
             }
 
-            return $this->redirectWithMessage($validator->errors()->first(), 'error', 'register')
+            return $this->redirectWithMessage($exception->firstError(), 'error', 'register')
                 ->withInput($request->except($except));
         }
 
-        $data = $validator->validated();
-
-        $user = User::query()->create([
-            'email' => trim($data['email']),
-            'username' => trim($data['username']),
-            'full_name' => trim($data['fullName']),
-            'password' => $data['password'],
-            'birth_date' => sprintf('%04d-%02d-%02d', $request->integer('year'), $request->integer('month'), $request->integer('day')),
-        ]);
-
-        Auth::login($user);
-        $request->session()->regenerate();
-        AuditLog::record('register', "{$user->username} heeft een account aangemaakt.", $user);
+        $this->guard()->login($result['token'], $result['user']);
 
         return redirect()->route('home');
     }
@@ -173,32 +98,33 @@ class AuthController extends Controller
         // Geen meldingen meer van dit account op deze telefoon.
         $notifications->clear();
 
-        if ($request->user() !== null) {
-            AuditLog::record('logout', "{$request->user()->username} is uitgelogd.", $request->user());
+        try {
+            $this->api->logout();
+        } catch (ApiException) {
+            // Geen verbinding of token al ongeldig: lokaal toch uitloggen.
         }
 
-        Auth::logout();
+        $this->guard()->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         return $this->redirectWithMessage('Je bent uitgelogd.', 'success', 'login');
     }
 
-    /**
-     * Uniek zonder op hoofdletters te letten: "Sanne" mag niet bestaan naast "sanne".
-     * (SQLite vergelijkt standaard hoofdlettergevoelig, de oude MySQL-database niet.)
-     */
-    private function uniqueIgnoringCase(string $column): Closure
+    private function guard(): ApiSessionGuard
     {
-        return function (string $attribute, mixed $value, Closure $fail) use ($column): void {
-            $taken = User::query()
-                ->whereRaw("LOWER({$column}) = ?", [mb_strtolower(trim((string) $value))])
-                ->exists();
+        /** @var ApiSessionGuard $guard */
+        $guard = Auth::guard();
 
-            if ($taken) {
-                $fail('Dit e-mailadres of deze gebruikersnaam is al in gebruik.');
-            }
-        };
+        return $guard;
+    }
+
+    /**
+     * Naam van het token op de server, zodat je ziet waar iemand is ingelogd.
+     */
+    private function deviceName(): string
+    {
+        return config('nativephp-internal.running', false) ? 'UpMove-app ('.config('nativephp-internal.platform', 'telefoon').')' : 'UpMove in de browser';
     }
 
     private function redirectWithMessage(string $message, string $type, string $mode): RedirectResponse

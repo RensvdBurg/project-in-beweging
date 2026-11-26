@@ -28,7 +28,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/', HomeController::class)->name('home');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-    Route::get('/leren/{challenge}', [ChallengeController::class, 'show'])->name('challenges.show');
+    Route::get('/leren/{challenge}', [ChallengeController::class, 'show'])->whereNumber('challenge')->name('challenges.show');
     Route::post('/challenges/next', [ChallengeController::class, 'next'])->name('challenges.next');
     Route::post('/challenges/complete', [ChallengeController::class, 'complete'])->name('challenges.complete');
 
@@ -37,13 +37,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/activiteiten/overzicht', [ActivityController::class, 'all'])->name('activities.all');
 
     Route::get('/community', [CommunityController::class, 'index'])->name('community.index');
-    Route::post('/activiteiten/{activity}/like', [CommunityController::class, 'like'])->name('activities.like');
-    Route::post('/activiteiten/{activity}/reacties', [CommunityController::class, 'comment'])->name('activities.comment');
-    Route::delete('/reacties/{comment}', [CommunityController::class, 'destroyComment'])->name('comments.destroy');
+    Route::post('/activiteiten/{activity}/like', [CommunityController::class, 'like'])->whereNumber('activity')->name('activities.like');
+    Route::post('/activiteiten/{activity}/reacties', [CommunityController::class, 'comment'])->whereNumber('activity')->name('activities.comment');
+    Route::delete('/reacties/{comment}', [CommunityController::class, 'destroyComment'])->whereNumber('comment')->name('comments.destroy');
 
     Route::view('/statistieken', 'statistics.index')->name('statistics');
 
-    Route::get('/profiel/{user}', [ProfileController::class, 'show'])->name('profile.show');
+    Route::get('/profiel/{user}', [ProfileController::class, 'show'])->whereNumber('user')->name('profile.show');
 
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');

@@ -2,27 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Activity;
-use App\Models\User;
+use App\Services\Api\UpMoveApi;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
- * Profiel van een gebruiker, te openen via de ranglijst of een activiteit op home.
+ * Profiel van een gebruiker, te openen via de ranglijst of een activiteit op home (via de API).
  */
 class ProfileController extends Controller
 {
     public const PER_PAGE = 5;
 
-    public function show(Request $request, User $user): View|RedirectResponse
+    public function __construct(private readonly UpMoveApi $api) {}
+
+    public function show(Request $request, int $user): View|RedirectResponse
     {
         $from = $request->query('from') === 'home' ? 'home' : 'ranglijst';
+        $profile = $this->api->profile($user);
 
-        $activities = Activity::query()
-            ->whereBelongsTo($user)
-            ->forFeed($request->user())
-            ->paginate(self::PER_PAGE, pageName: 'activity_page')
+        $activities = $this->api
+            ->userActivities($user, max(1, $request->integer('activity_page', 1)), self::PER_PAGE, 'activity_page')
             ->withQueryString()
             ->fragment('profile-activities-title');
 
@@ -36,8 +36,8 @@ class ProfileController extends Controller
         }
 
         return view('profile.show', [
-            'profile' => $user,
-            'profileRank' => $user->leaderboardRank(),
+            'profile' => $profile['user'],
+            'profileRank' => $profile['rank'],
             'activities' => $activities,
             'returnToHome' => $from === 'home',
             'from' => $from,

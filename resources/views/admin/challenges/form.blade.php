@@ -55,15 +55,29 @@
             </div>
             <div class="settings-divider mx-4 h-px bg-[#eceef2]"></div>
             <div class="grid sm:grid-cols-3">
-                @include('admin.partials.field', ['name' => 'difficulty', 'label' => 'Moeilijkheid', 'value' => $challenge->difficulty, 'list' => 'difficulty-options', 'extraAttributes' => 'maxlength="50" required'])
+                @php
+                    $difficultyError = $errors->first('difficulty');
+                    $selectedDifficulty = old('difficulty', $challenge->difficulty);
+                @endphp
+                <label class="block p-4" for="field-difficulty">
+                    <span class="settings-label mb-1.5 block text-[11px] font-semibold text-[#5f6672]">Moeilijkheid</span>
+                    <select
+                        id="field-difficulty"
+                        name="difficulty"
+                        required
+                        @if ($difficultyError) aria-invalid="true" aria-describedby="field-difficulty-error" @endif
+                        class="account-input w-full rounded-xl border bg-white px-3 py-2.5 text-[13px] font-semibold outline-none transition focus:border-orange focus-visible:ring-2 focus-visible:ring-orange/30 {{ $difficultyError ? 'border-red-600' : 'border-[#e5e8ec]' }}">
+                        @foreach ($difficulties as $difficulty)
+                            <option value="{{ $difficulty }}" @selected($selectedDifficulty === $difficulty)>{{ $difficulty }}</option>
+                        @endforeach
+                    </select>
+                    @if ($difficultyError)
+                        <span id="field-difficulty-error" class="mt-1.5 block text-[11px] font-semibold text-red-600">{{ $difficultyError }}</span>
+                    @endif
+                </label>
                 @include('admin.partials.field', ['name' => 'kcal_burned', 'label' => 'Kcal', 'type' => 'number', 'value' => $challenge->kcal_burned, 'extraAttributes' => 'min="0" max="10000" step="1" required'])
                 @include('admin.partials.field', ['name' => 'xp_reward', 'label' => 'XP-beloning', 'type' => 'number', 'value' => $challenge->xp_reward, 'extraAttributes' => 'min="1" max="10000" step="1" required'])
             </div>
-            <datalist id="difficulty-options">
-                @foreach ($difficulties as $difficulty)
-                    <option value="{{ $difficulty }}"></option>
-                @endforeach
-            </datalist>
         </section>
 
         <div class="flex justify-end gap-2">

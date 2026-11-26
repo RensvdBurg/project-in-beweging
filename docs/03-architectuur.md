@@ -85,7 +85,7 @@ Een gast die `/` opent, gaat naar `/login`; een ingelogde gebruiker die `/login`
 | description_extra | text, nullable (uitleg op de beschrijvingspagina; id 52–101 komen uit `bewegingsapp`). De oude kolom `description` is verwijderd (migratie `2026_11_27_090000`). |
 | img | string (URL of pad onder `public/`) |
 | kcal_burned | unsigned integer |
-| difficulty | string (bv. "Makkelijk", "Gemiddeld", "Moeilijk") |
+| difficulty | string: "Beginner", "Gevorderd" of "Expert" (`Challenge::DIFFICULTIES`; in het admin-dashboard een keuzelijst) |
 | xp_reward | unsigned integer |
 
 ### `challenge_completions`

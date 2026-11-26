@@ -2,9 +2,11 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Models\Challenge;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 /**
  * Challenge toevoegen of bewerken in het admin-dashboard.
@@ -43,7 +45,7 @@ class ChallengeRequest extends FormRequest
                 }
             }],
             'kcal_burned' => ['required', 'integer', 'min:0', 'max:10000'],
-            'difficulty' => ['required', 'string', 'max:50'],
+            'difficulty' => ['required', 'string', Rule::in(Challenge::DIFFICULTIES)],
             'xp_reward' => ['required', 'integer', 'min:1', 'max:10000'],
         ];
     }
@@ -58,7 +60,7 @@ class ChallengeRequest extends FormRequest
             'description_extra.max' => 'De beschrijving mag maximaal 5000 tekens bevatten.',
             'img.required' => 'Vul een afbeelding in (pad in public/ of een https-URL).',
             'kcal_burned.*' => 'Vul een geldig aantal kcal in (0 tot 10.000).',
-            'difficulty.*' => 'Vul een moeilijkheid in, bijvoorbeeld Beginner of Gevorderd.',
+            'difficulty.*' => 'Kies een moeilijkheid: Beginner, Gevorderd of Expert.',
             'xp_reward.*' => 'Vul een XP-beloning in van 1 tot 10.000.',
         ];
     }

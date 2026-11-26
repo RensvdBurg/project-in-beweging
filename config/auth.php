@@ -38,9 +38,9 @@ return [
     */
 
     'guards' => [
+        // De app (en het admin-dashboard) loggen in via de API: zie App\Auth\ApiSessionGuard.
         'web' => [
-            'driver' => 'session',
-            'provider' => 'users',
+            'driver' => 'upmove',
         ],
     ],
 

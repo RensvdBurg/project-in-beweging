@@ -46,7 +46,7 @@ class ApiAuthTest extends TestCase
         $this->postJson(route('api.v1.register'), $this->registration(['password_confirmation' => 'anders123', 'birth_date' => '2999-01-01']))
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['username', 'password_confirmation', 'birth_date'])
-            ->assertJsonPath('errors.username.0', 'Deze gebruikersnaam is al in gebruik.');
+            ->assertJsonPath('errors.username.0', 'Dit e-mailadres of deze gebruikersnaam is al in gebruik.');
     }
 
     public function test_register_cannot_make_an_admin(): void

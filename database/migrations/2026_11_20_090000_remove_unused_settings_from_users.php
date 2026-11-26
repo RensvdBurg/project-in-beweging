@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\DB;
  */
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     private const REMOVED = ['reminders', 'quietHours', 'sound'];
 
     public function up(): void

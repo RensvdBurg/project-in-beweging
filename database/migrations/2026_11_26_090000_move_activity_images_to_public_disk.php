@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Storage;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Storage;
  */
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     public function up(): void
     {
         $this->move(Storage::disk('local'), Storage::disk('public'));

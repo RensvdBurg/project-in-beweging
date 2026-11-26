@@ -44,7 +44,7 @@ class ChallengeController extends Controller
     {
         return view('admin.challenges.form', [
             'challenge' => new Challenge(['difficulty' => 'Beginner', 'kcal_burned' => 5, 'xp_reward' => 5]),
-            'difficulties' => $this->difficulties(),
+            'difficulties' => Challenge::DIFFICULTIES,
         ]);
     }
 
@@ -61,7 +61,7 @@ class ChallengeController extends Controller
     {
         return view('admin.challenges.form', [
             'challenge' => $challenge,
-            'difficulties' => $this->difficulties(),
+            'difficulties' => Challenge::DIFFICULTIES,
         ]);
     }
 
@@ -82,16 +82,5 @@ class ChallengeController extends Controller
         AuditLog::record('admin_challenge_deleted', "{$request->user()->username} heeft challenge \"{$title}\" verwijderd.", $request->user());
 
         return redirect()->route('admin.challenges.index')->with('admin_status', "Challenge \"{$title}\" is verwijderd.");
-    }
-
-    /**
-     * Bestaande moeilijkheden als suggesties in het formulier.
-     *
-     * @return list<string>
-     */
-    private function difficulties(): array
-    {
-        return Challenge::query()->distinct()->orderBy('difficulty')->pluck('difficulty')
-            ->merge(['Beginner', 'Gevorderd'])->unique()->values()->all();
     }
 }

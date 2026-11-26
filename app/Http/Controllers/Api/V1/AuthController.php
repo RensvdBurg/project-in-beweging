@@ -28,13 +28,16 @@ class AuthController extends Controller
 
     public const USERNAME_MESSAGE = 'Je gebruikersnaam moet 3 tot 30 tekens bevatten (letters, cijfers, punt, streepje of underscore).';
 
+    public const TAKEN_MESSAGE = 'Dit e-mailadres of deze gebruikersnaam is al in gebruik.';
+
     public const PASSWORD_MESSAGE = 'Kies een wachtwoord van minimaal 8 en maximaal 72 letters.';
 
     public function register(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'email' => ['bail', 'required', 'string', 'email', 'max:254', self::uniqueIgnoringCase('email')],
-            'username' => ['bail', 'required', 'string', 'regex:/\A[A-Za-z0-9_.-]{3,30}\z/', self::uniqueIgnoringCase('username')],
+            // Bij registreren bewust niet zeggen wélke van de twee al bestaat (zoals in de app).
+            'email' => ['bail', 'required', 'string', 'email', 'max:254', self::uniqueIgnoringCase('email', message: self::TAKEN_MESSAGE)],
+            'username' => ['bail', 'required', 'string', 'regex:/\A[A-Za-z0-9_.-]{3,30}\z/', self::uniqueIgnoringCase('username', message: self::TAKEN_MESSAGE)],
             'full_name' => ['required', 'string', 'max:150'],
             'password' => ['bail', 'required', self::passwordBytes()],
             'password_confirmation' => ['same:password'],
@@ -154,16 +157,16 @@ class AuthController extends Controller
     /**
      * Uniek zonder op hoofdletters te letten: "Sanne" mag niet bestaan naast "sanne".
      */
-    public static function uniqueIgnoringCase(string $column, ?int $ignoreId = null): Closure
+    public static function uniqueIgnoringCase(string $column, ?int $ignoreId = null, ?string $message = null): Closure
     {
-        return function (string $attribute, mixed $value, Closure $fail) use ($column, $ignoreId): void {
+        return function (string $attribute, mixed $value, Closure $fail) use ($column, $ignoreId, $message): void {
             $taken = User::query()
                 ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
                 ->whereRaw("LOWER({$column}) = ?", [mb_strtolower(trim((string) $value))])
                 ->exists();
 
             if ($taken) {
-                $fail($column === 'email' ? 'Dit e-mailadres is al in gebruik.' : 'Deze gebruikersnaam is al in gebruik.');
+                $fail($message ?? ($column === 'email' ? 'Dit e-mailadres is al in gebruik.' : 'Deze gebruikersnaam is al in gebruik.'));
             }
         };
     }

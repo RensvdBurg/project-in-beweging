@@ -11,6 +11,13 @@ use Illuminate\Support\Str;
 class Challenge extends Model
 {
     /**
+     * Moeilijkheden waaruit je in het admin-dashboard kiest (van makkelijk naar moeilijk).
+     *
+     * @var list<string>
+     */
+    public const DIFFICULTIES = ['Beginner', 'Gevorderd', 'Expert'];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

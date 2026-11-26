@@ -2,7 +2,8 @@
 
 UpMove draait als native iOS- en Android-app via [NativePHP Mobile](https://nativephp.com) (`nativephp/mobile` v4).
 NativePHP bundelt PHP en de volledige Laravel-app in de app; de schermen worden in een WebView getoond.
-Er is dus **geen server nodig**: alles (ook de SQLite-database) staat op het toestel.
+De gegevens (accounts, XP, challenges, activiteiten) staan **op de server in MySQL**; de app haalt alles via
+de API (`docs/08-api.md`). De app werkt dus alleen met internet.
 
 ## Vereisten
 
@@ -63,14 +64,19 @@ npm run dev -- --mode=android   # of --mode=ios
 - Gevoelige `.env`-sleutels (`*_SECRET`, `DB_PASSWORD`, …) worden bij het bundelen automatisch verwijderd
   (`cleanup_env_keys`).
 
-## Database op het toestel
+## Server en database
 
-- `DB_CONNECTION=sqlite`. NativePHP voert de migraties uit bij het opstarten van de app.
-- De voorbeeldchallenges worden door de migratie `create_challenges_table` ingevoegd, dus er is geen
-  `db:seed` nodig op het toestel.
-- Iedere installatie heeft een eigen, lokale database: accounts en XP staan alleen op dat toestel.
-  Wil je later accounts tussen toestellen delen, dan is een externe API nodig
-  (bijvoorbeeld een aparte Laravel-backend met Sanctum).
+- Zet in `.env` vóór het bouwen `UPMOVE_API_URL` op de server, bijv. `https://upmove.example.nl/api/v1`.
+  Tijdens ontwikkelen op hetzelfde wifi-netwerk: `http://<ip-van-je-computer>:8124/api/v1` (Android-emulator:
+  `http://10.0.2.2:8124/api/v1`). Een `http://`-adres werkt alleen tijdens ontwikkelen; gebruik in een echte
+  release altijd HTTPS.
+- NativePHP zet op de telefoon zelf `DB_CONNECTION=sqlite` en draait bij het opstarten `migrate --force`. Dat is
+  niet uit te zetten. Alle migraties met app-gegevens gebruiken daarom `App\Support\ServerOnlyMigration` en worden
+  op de telefoon overgeslagen; die SQLite-database blijft leeg (alleen Laravels cache- en jobs-tabellen).
+- `2026_11_28_090000_drop_local_app_data_on_phone` draait alleen op de telefoon en verwijdert de tabellen die
+  oudere versies van de app daar aanmaakten.
+- Het API-token staat in de sessie (een bestand) en in `SecureStorage` (Keychain/Keystore). Verloopt de sessie,
+  dan logt de app met dat token automatisch opnieuw in.
 
 ## Plugins
 

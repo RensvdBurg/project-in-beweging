@@ -1,11 +1,14 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     /**
      * Beheerders mogen het admin-dashboard (/admin) openen.
      * Een gebruiker beheerder maken: `php artisan upmove:admin {gebruikersnaam}`.

@@ -50,6 +50,7 @@ tests/Feature/Admin/          tests voor toegang, gebruikers, challenges, activi
 
 ## Challenges
 
+- Moeilijkheid: kies Beginner, Gevorderd of Expert (`Challenge::DIFFICULTIES`); andere waarden worden geweigerd.
 - Afbeelding: een bestand in `public/` (bijv. `images/challenges/foto.jpg`) of een https-URL.
   Uploaden kan (nog) niet: de NativePHP-app serveert alleen bestanden uit `public/`.
 - Verwijderen: voltooiingen verdwijnen mee, verdiende XP blijft staan; wie de challenge open had,

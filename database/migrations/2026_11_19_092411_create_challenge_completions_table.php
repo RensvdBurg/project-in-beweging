@@ -1,11 +1,14 @@
 <?php
 
+use App\Support\ServerOnlyMigration;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    use ServerOnlyMigration;
+
     /**
      * Registreert voltooide opdrachten, zodat dezelfde opdracht binnen hetzelfde
      * 90-minutenblok (challenge_interval) maar één keer XP oplevert.

@@ -69,8 +69,22 @@ class Activity extends Model
             ->latest('id');
     }
 
+    /**
+     * In de app komt een activiteit uit de API: de afbeelding staat dan op de server.
+     */
+    private ?string $remoteImageUrl = null;
+
+    public function setRemoteImageUrl(?string $url): void
+    {
+        $this->remoteImageUrl = $url;
+    }
+
     public function imageUrl(): ?string
     {
+        if ($this->remoteImageUrl !== null) {
+            return $this->remoteImageUrl;
+        }
+
         if ($this->image_path === null) {
             return null;
         }

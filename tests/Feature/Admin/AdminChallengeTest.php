@@ -61,6 +61,21 @@ class AdminChallengeTest extends TestCase
             ->assertSessionHasNoErrors();
     }
 
+    public function test_difficulty_is_chosen_from_beginner_gevorderd_or_expert(): void
+    {
+        $this->get(route('admin.challenges.create'))
+            ->assertOk()
+            ->assertSee('<select', false)
+            ->assertSeeInOrder(['<option value="Beginner" selected>', '<option value="Gevorderd"', '<option value="Expert"'], false);
+
+        $this->post(route('admin.challenges.store'), $this->validData(['difficulty' => 'Moeilijk']))
+            ->assertSessionHasErrors(['difficulty' => 'Kies een moeilijkheid: Beginner, Gevorderd of Expert.']);
+
+        $this->post(route('admin.challenges.store'), $this->validData(['title' => 'Plank van twee minuten', 'difficulty' => 'Expert']))
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('challenges', ['title' => 'Plank van twee minuten', 'difficulty' => 'Expert']);
+    }
+
     public function test_admin_can_edit_a_challenge(): void
     {
         $challenge = Challenge::query()->firstOrFail();

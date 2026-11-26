@@ -2,8 +2,12 @@
 
 namespace App\Providers;
 
+use App\Auth\ApiSessionGuard;
+use App\Services\Api\ApiHydrator;
+use App\Services\Api\ApiToken;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Native\Mobile\JumpBridge;
@@ -23,6 +27,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Inloggen in de app via de API (token + gebruiker in de sessie, geen database).
+        Auth::extend('upmove', fn ($app) => new ApiSessionGuard($app['session.store'], $app->make(ApiToken::class), $app->make(ApiHydrator::class)));
+
         // API: 120 verzoeken per minuut per gebruiker (of per IP-adres zonder login).
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by($request->user()?->id ?: $request->ip()));
     }

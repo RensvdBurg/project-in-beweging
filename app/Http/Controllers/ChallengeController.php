@@ -2,33 +2,34 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Challenge;
-use App\Services\ChallengeService;
+use App\Services\Api\UpMoveApi;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
 
+/**
+ * Challenges via de API; de regels (blokken, wissels, XP) staan op de server in ChallengeService.
+ */
 class ChallengeController extends Controller
 {
-    public function __construct(private readonly ChallengeService $challenges) {}
+    public function __construct(private readonly UpMoveApi $api) {}
 
     /**
      * Beschrijvingspagina van een challenge (vroeger pages/learn/learn-beschrijving.php).
      */
-    public function show(Challenge $challenge): View
+    public function show(int $challenge): View
     {
-        return view('challenges.show', ['challenge' => $challenge]);
+        return view('challenges.show', ['challenge' => $this->api->challenge($challenge)]);
     }
 
-    public function next(Request $request): RedirectResponse
+    public function next(): RedirectResponse
     {
         return redirect()->route('home')
-            ->with('challenge_notice', $this->challenges->next($request->user()));
+            ->with('challenge_notice', $this->api->nextChallenge());
     }
 
-    public function complete(Request $request): RedirectResponse
+    public function complete(): RedirectResponse
     {
         return redirect()->route('home')
-            ->with('challenge_completion_notice', $this->challenges->complete($request->user()));
+            ->with('challenge_completion_notice', $this->api->completeChallenge());
     }
 }

@@ -58,6 +58,12 @@ body {
   min-height: 100%;
 }
 
+/* Altijd ruimte voor de scrollbalk reserveren, zodat korte pagina's (ranglijst,
+   statistieken) niet naar rechts verspringen t.o.v. lange pagina's met scrollbalk. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   font-family: "Montserrat", sans-serif;
   background: #f9fafc;

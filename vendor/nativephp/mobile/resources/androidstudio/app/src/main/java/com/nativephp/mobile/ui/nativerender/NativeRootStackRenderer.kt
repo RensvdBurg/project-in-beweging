@@ -1,0 +1,644 @@
+package com.nativephp.mobile.ui.nativerender
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.animation.core.animate
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.nativephp.mobile.ui.MaterialIcon
+
+/**
+ * Compose port of iOS's `NativeRootStackRenderer`. Renders the
+ * `native_root_stack` sentinel via Material 3 `Scaffold` + `TopAppBar`
+ * with a path-driven AnimatedContent for push / pop transitions.
+ *
+ * `BackHandler` intercepts system back / predictive-back gesture,
+ * shrinking the path and firing `sendSystemBackEvent` so the PHP
+ * runloop pops to match.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NativeRootStackRenderer(node: NativeUINode, modifier: Modifier = Modifier) {
+    val currentUri = node.props.getString("current_uri", "")
+    val coordinator = NavigationCoordinator
+
+    // Sync-write the cache so destinations always render the freshest
+    // tree on this very recomposition. The path mutation (push / pop)
+    // is deferred to LaunchedEffect since mutating SnapshotState during
+    // composition is forbidden.
+    if (currentUri.isNotEmpty()) {
+        coordinator.cache(currentUri, node)
+    }
+    LaunchedEffect(node) {
+        if (currentUri.isNotEmpty()) {
+            coordinator.receive(currentUri, node.props.getInt("stack_depth", 0), node)
+        }
+    }
+
+    val rootUri by coordinator.rootUri
+    val path: SnapshotStateList<String> = coordinator.path
+
+    // Effective top-of-stack URI. Falls back to currentUri on the very
+    // first publish before the coordinator has seeded its root.
+    val activeUri = path.lastOrNull() ?: rootUri ?: currentUri
+    val isRoot = path.isEmpty()
+
+    // Resolve the active level's content via the cache; fall back to
+    // the live `node` only when the cache hasn't been populated yet
+    // (initial publish, before LaunchedEffect's receive ran).
+    val activeNode = coordinator.rootNodeCache[activeUri] ?: node
+
+    val title = activeNode.props.getString("title", "")
+    val subtitle = activeNode.props.getString("subtitle", "")
+    val showBack = activeNode.props.getBool("back")
+    val reservesNavigationBarSlot = NativeRootHostRegistry.reservesNavigationBarSlot(activeNode)
+    val bgArgb = activeNode.props.getColor("background_color", 0)
+    val textArgb = activeNode.props.getColor("text_color", 0)
+    val hasExplicitBg = bgArgb != 0
+    val hasExplicitText = textArgb != 0
+    // Per-layout / per-bar chrome font (font_name prop), resolved through the
+    // plugin seam. Null → inherit the ambient (possibly app-default-themed)
+    // typography unchanged.
+    val chromeFontFamily = com.nativephp.mobile.ui.NativeUIThemeProvider
+        .resolveChromeFontFamily(activeNode.props.getString("font_name", ""))
+
+    // Filter children for actions and the screen content body.
+    val actions = activeNode.children.filter { it.type == "top_bar_action" }
+    // Custom principal-slot content (logo / titleView) — replaces the
+    // string title when present.
+    val titleNode = activeNode.children.firstOrNull { it.type == "top_bar_title" }
+    val screenContent = activeNode.children.firstOrNull {
+        it.type != "top_bar_action" && it.type != "top_bar_title" &&
+            it.type != "bottom_bar" && !NativeRootHostRegistry.consumes(it.type)
+    }
+    // Bottom-pinned content (inline `<native:bottom-bar>` in the screen blade
+    // or the layout's `bottomBar()`). Rendered in the Scaffold `bottomBar`
+    // slot below; the root `.imePadding()` (NativeUIRenderer) then pushes the
+    // whole Scaffold up when the keyboard appears, so the bar rides above it
+    // and the content region shrinks — the Android analogue of iOS's
+    // `.safeAreaInset(.bottom)`.
+    val bottomBarNode = activeNode.children.firstOrNull { it.type == "bottom_bar" }
+
+    // Inline search field config (NavBar::searchBar() — Apple HIG /
+    // Expo pattern). When set, replaces the title slot with a search
+    // text field; query changes flow back via TEXT_CHANGE.
+    val searchPlaceholder = activeNode.props.getString("search_placeholder", "")
+    val searchOnQueryCb = activeNode.props.getCallbackId("search_on_query")
+    val searchDebounceMs = activeNode.props.getInt("search_debounce_ms", 300)
+    val hasSearch = searchPlaceholder.isNotEmpty()
+
+    // Per-screen nav-bar opt-out (`$hidesNavBar` /
+    // `navigationOptions()->hidden()`) — suppresses the TopAppBar for
+    // this level only; push / pop and the path-driven AnimatedContent
+    // keep working, and the Scaffold padding follows automatically.
+    val hideNavBar = activeNode.props.getBool("hide_nav_bar")
+
+    // System back / predictive-back: shrink path if pushed, otherwise
+    // forward to PHP so it pops the underlying stack (e.g. back to
+    // wherever the user came from before entering native chrome).
+    BackHandler(enabled = true) {
+        if (path.isNotEmpty()) {
+            // removeAt, NOT Kotlin's removeLast(): compiled against SDK 35 the
+            // latter binds to Java 21's List.removeLast(), absent on Android 14-.
+            path.removeAt(path.lastIndex)
+            coordinator.onPathChange(path.toList())
+        } else {
+            NativeElementBridge.sendSystemBackEvent()
+        }
+    }
+
+    val hasTitle = title.isNotEmpty() || subtitle.isNotEmpty()
+    val barContainerColor = if (hasExplicitBg) argbToComposeColor(bgArgb)
+        else MaterialTheme.colorScheme.surface
+
+    // `display_mode` mirrors iOS's `navigationBarTitleDisplayMode`. `large`
+    // gets Material's `LargeTopAppBar`: a big left-aligned title that
+    // collapses to the small bar as the screen content scrolls under it —
+    // the Android analogue of iOS's large-title behavior. Other modes use
+    // the standard small bar.
+    val displayMode = activeNode.props.getString("display_mode", "")
+    val useLargeTitle = displayMode == "large" && hasTitle
+
+    // `scroll_behavior` (NavBar::scrollBehavior()) selects the Material 3
+    // TopAppBarScrollBehavior. Empty preserves the legacy default: large
+    // titles collapse, everything else is pinned. The search field lives
+    // in the pinned topBar Column below the bar, so `collapse` yields the
+    // iOS pattern — big title scrolls away, search stays pinned.
+    val scrollMode = activeNode.props.getString("scroll_behavior", "")
+        .ifEmpty { if (useLargeTitle) "collapse" else "pinned" }
+    val scrollBehavior = when (scrollMode) {
+        "enterAlways" -> TopAppBarDefaults.enterAlwaysScrollBehavior()
+        "pinned"      -> TopAppBarDefaults.pinnedScrollBehavior()
+        else          -> TopAppBarDefaults.exitUntilCollapsedScrollBehavior() // "collapse"
+    }
+    // Only wire nested scroll when the bar actually reacts; a truly pinned
+    // bar should not consume the content's scroll offset.
+    val barReactsToScroll = scrollMode != "pinned"
+
+    // Shared bar slots so the small and large variants are identical apart
+    // from collapse behavior.
+    val titleContent: @Composable () -> Unit = {
+        if (titleNode != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                titleNode.children.forEach { child -> NodeView(node = child) }
+            }
+        } else if (hasSearch && !hasTitle) {
+            InlineNavSearchField(
+                placeholder = searchPlaceholder,
+                callbackId = searchOnQueryCb,
+                nodeId = activeNode.id,
+                debounceMs = searchDebounceMs,
+            )
+        } else if (subtitle.isNotEmpty()) {
+            Column {
+                // Large mode lets the bar drive the headline title style;
+                // inline mode shrinks it to titleMedium so title + subtitle
+                // fit the single-row bar.
+                if (useLargeTitle) {
+                    Text(title, fontWeight = FontWeight.SemiBold, fontFamily = chromeFontFamily)
+                } else {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = chromeFontFamily
+                    )
+                }
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, fontFamily = chromeFontFamily)
+            }
+        } else {
+            Text(title, fontWeight = FontWeight.SemiBold, fontFamily = chromeFontFamily)
+        }
+    }
+    val navIconContent: @Composable () -> Unit = {
+        if (showBack) {
+            IconButton(onClick = {
+                // Manual back chevron always defers to system back —
+                // shrinks path if pushed, otherwise tells PHP.
+                if (path.isNotEmpty()) {
+                    // removeAt, NOT removeLast() — see BackHandler above.
+                    path.removeAt(path.lastIndex)
+                    coordinator.onPathChange(path.toList())
+                } else {
+                    NativeElementBridge.sendSystemBackEvent()
+                }
+            }) {
+                // Font glyphs don't auto-mirror like AutoMirrored ImageVectors; flip for RTL.
+                val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+                MaterialIcon(
+                    name = "arrow_back",
+                    contentDescription = "Back",
+                    modifier = if (rtl) Modifier.scale(scaleX = -1f, scaleY = 1f) else Modifier
+                )
+            }
+        } else if (reservesNavigationBarSlot) {
+            Spacer(modifier = Modifier.width(48.dp))
+        }
+    }
+    val barColors = if (hasExplicitBg) {
+        val bg = argbToComposeColor(bgArgb)
+        val fg = if (hasExplicitText) argbToComposeColor(textArgb) else Color.White
+        TopAppBarDefaults.topAppBarColors(
+            containerColor = bg,
+            scrolledContainerColor = bg,
+            titleContentColor = fg,
+            navigationIconContentColor = fg,
+            actionIconContentColor = fg
+        )
+    } else {
+        TopAppBarDefaults.topAppBarColors()
+    }
+
+    Scaffold(
+        topBar = topBar@{
+          if (hideNavBar) return@topBar
+          // iOS renders `searchBar()` BELOW the navigation title. Mirror that:
+          // keep the title in the bar and stack the search field underneath.
+          // Only when there's no title at all does search take the title slot
+          // (avoids an otherwise-empty bar row).
+          Column(modifier = Modifier.background(barContainerColor)) {
+            if (useLargeTitle) {
+                LargeTopAppBar(
+                    title = titleContent,
+                    navigationIcon = navIconContent,
+                    actions = { actions.forEach { action -> TopBarActionView(action) } },
+                    colors = barColors,
+                    scrollBehavior = scrollBehavior,
+                )
+            } else {
+                TopAppBar(
+                    title = titleContent,
+                    navigationIcon = navIconContent,
+                    actions = { actions.forEach { action -> TopBarActionView(action) } },
+                    colors = barColors,
+                    scrollBehavior = scrollBehavior,
+                )
+            }
+            // Search field stacked under a titled bar (iOS-parity). When
+            // there's no title, the field already lives in the bar's title
+            // slot above, so this is skipped.
+            if (hasSearch && hasTitle) {
+                // M3 "search bar below a title" pattern: a full-width filled
+                // pill (https://m3.material.io/components/search/guidelines).
+                InlineNavSearchField(
+                    placeholder = searchPlaceholder,
+                    callbackId = searchOnQueryCb,
+                    nodeId = activeNode.id,
+                    debounceMs = searchDebounceMs,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+          }
+        },
+        bottomBar = {
+            // Render the bar's inner content (its first child). Kept in the
+            // Scaffold slot so content insets above it and `imePadding` lifts
+            // it over the keyboard.
+            //
+            // Unlike M3's NavigationBar, custom slot content handles no
+            // insets of its own — unpadded, the bar draws flush with the
+            // window edge, UNDER the system navigation bar (gesture pill /
+            // 3-button strip). Pad it above the nav-bar inset and bleed the
+            // bar's own background color through the inset so that strip
+            // matches the bar instead of showing the window background —
+            // mirroring iOS's home-indicator bleed
+            // (`StackBottomBarInsetModifier.barContent`). The IME inset is
+            // excluded because the root `imePadding` already lifts the whole
+            // Scaffold above the keyboard — keeping the nav-bar inset while
+            // the keyboard covers that region would float the bar a
+            // nav-bar height too high.
+            bottomBarNode?.children?.firstOrNull()?.let { inner ->
+                val darkBg = if (isSystemInDarkTheme()) inner.props.getColor("dark_bg_color", 0) else 0
+                val barBg = if (darkBg != 0) darkBg else (inner.style?.bgColor ?: 0)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (barBg != 0) Modifier.background(argbToComposeColor(barBg))
+                            else Modifier
+                        )
+                        .windowInsetsPadding(WindowInsets.navigationBars.exclude(WindowInsets.ime))
+                ) {
+                    NodeView(node = inner)
+                }
+            }
+        },
+        // With the TopAppBar composed, it consumes the status-bar inset
+        // itself. With the bar hidden, Scaffold's default contentWindowInsets
+        // would turn that inset into hard top padding — a dead strip under
+        // the (transparent) status bar that nothing can draw behind. Drop
+        // the top side so hidden-bar screens are genuinely edge-to-edge;
+        // content that shouldn't sit under the clock uses the safe-area
+        // utilities instead.
+        contentWindowInsets = if (hideNavBar) {
+            ScaffoldDefaults.contentWindowInsets
+                .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+        } else {
+            ScaffoldDefaults.contentWindowInsets
+        },
+        modifier = modifier.fillMaxSize()
+    ) { padding ->
+        // AnimatedContent slides between stack levels. Direction
+        // discrimination (push vs pop) would need state we don't have
+        // handy here; the symmetric slide is acceptable for now.
+        //
+        // The Scaffold padding tracks the CURRENT bar, which swaps
+        // instantly when activeUri changes. Applying it to the
+        // AnimatedContent wrapper re-anchored both sliding levels to the
+        // new bar height mid-slide, so a push between levels whose bars
+        // differ in height (large title + search vs small bar) read as a
+        // diagonal slide. Each level is padded individually instead: the
+        // entering level uses the live padding, the exiting level keeps
+        // the padding it was last laid out with, and each level's
+        // vertical origin stays fixed for the whole slide.
+        val levelPaddings = remember { HashMap<String, PaddingValues>() }
+        // Remember how deep each level sat when it
+        // was shown so the slide can tell push from pop. A pop (target
+        // shallower than the level leaving) slides the leaving screen out to
+        // the RIGHT and the previous one back in from the left, as iOS does;
+        // the symmetric spec played the push animation both ways.
+        val levelDepths = remember { HashMap<String, Int>() }
+        levelDepths[activeUri] = path.size
+        // …and the last tree seen for each level, so a popped level still
+        // has content while it slides out: PHP's republish evicts it from
+        // the coordinator cache within the slide, and the empty fallback
+        // made the outgoing page vanish instead of sliding.
+        val levelNodes = remember { HashMap<String, NativeUINode>() }
+        if (levelNodes.size > 16) {
+            levelNodes.keys.retainAll((path + listOfNotNull(rootUri, activeUri)).toSet())
+        }
+        AnimatedContent(
+            targetState = activeUri,
+            transitionSpec = {
+                val intSpec = tween<androidx.compose.ui.unit.IntOffset>(durationMillis = 250)
+                val popping = (levelDepths[targetState] ?: 0) < (levelDepths[initialState] ?: 0)
+                if (popping) {
+                    slideInHorizontally(intSpec) { -it } togetherWith
+                        slideOutHorizontally(intSpec) { it }
+                } else {
+                    slideInHorizontally(intSpec) { it } togetherWith
+                        slideOutHorizontally(intSpec) { -it }
+                }
+            },
+            label = "stack-level",
+            modifier = Modifier.fillMaxSize()
+        ) { uri ->
+            // The TopAppBar's nested-scroll connection is attached HERE —
+            // directly wrapping the screen content — rather than on the
+            // Scaffold modifier. With the connection on the Scaffold, the
+            // AnimatedContent transition boundary sat between it and the
+            // scrolling list, so the list's scroll deltas never reached the
+            // bar and `collapse`/`enterAlways` never fired. Wrapping the
+            // content keeps the connection a direct ancestor of the list.
+            val scrollModifier = if (barReactsToScroll) {
+                Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+            } else {
+                Modifier
+            }
+            val levelPadding = if (uri == activeUri) {
+                levelPaddings[uri] = padding
+                padding
+            } else {
+                levelPaddings[uri] ?: padding
+            }
+            val chromeScrollController = rememberChromeScrollController(scrollBehavior, barReactsToScroll)
+
+            CompositionLocalProvider(LocalChromeScrollController provides chromeScrollController) {
+                val levelNode = coordinator.rootNodeCache[uri]?.also { levelNodes[uri] = it } ?: levelNodes[uri]
+                val levelContent = levelNode?.children?.firstOrNull {
+                    it.type != "top_bar_action" && it.type != "top_bar_title" &&
+                        it.type != "bottom_bar" && !NativeRootHostRegistry.consumes(it.type)
+                }
+                Box(modifier = scrollModifier.fillMaxSize().screenBackground(levelContent).padding(levelPadding)) {
+                    if (levelContent != null) {
+                        NodeView(node = levelContent)
+                    } else if (uri == currentUri && screenContent != null) {
+                        NodeView(node = screenContent)
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize())
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Lets scrolling content drive the top bar's collapse state.
+ *
+ * Compose only moves the bar via nested-scroll deltas, and a PROGRAMMATIC
+ * scroll (`animateScrollToItem`) emits none — so a chat log that auto-scrolls
+ * to a new message leaves a large title stranded fully expanded, even though
+ * the content underneath moved exactly as far as a drag would have moved it.
+ *
+ * Renderers that scroll themselves should call [collapse] alongside that
+ * scroll. Deliberately a narrow interface rather than the Material 3
+ * `TopAppBarState`, so plugin renderers don't take a hard dependency on the
+ * chrome's implementation.
+ */
+interface ChromeScrollController {
+    /** Animate the top bar to fully collapsed. No-op if it can't collapse. */
+    suspend fun collapse()
+}
+
+/** Null when the screen has no collapsible chrome (pinned bar, or no bar). */
+val LocalChromeScrollController = compositionLocalOf<ChromeScrollController?> { null }
+
+/**
+ * Exposes the bar's collapse state to scrolling content. Only when the bar
+ * actually reacts to scroll — a pinned bar stays put, and handing content a
+ * controller that silently does nothing would be worse than handing it null.
+ * Shared by the stack and tabs renderers.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun rememberChromeScrollController(
+    scrollBehavior: TopAppBarScrollBehavior,
+    barReactsToScroll: Boolean,
+): ChromeScrollController? = remember(scrollBehavior, barReactsToScroll) {
+    if (!barReactsToScroll) {
+        null
+    } else {
+        object : ChromeScrollController {
+            override suspend fun collapse() {
+                val state = scrollBehavior.state
+                val target = state.heightOffsetLimit
+                if (target >= 0f || state.heightOffset <= target) {
+                    return
+                }
+                animate(
+                    initialValue = state.heightOffset,
+                    targetValue = target,
+                    animationSpec = tween(durationMillis = 250),
+                ) { value, _ -> state.heightOffset = value }
+            }
+        }
+    }
+}
+
+/**
+ * Renders a single trailing toolbar action — plain IconButton when no
+ * sub-items, DropdownMenu when `NavAction::items()` produced
+ * `top_bar_action` children. Module-internal so the tabs renderer can
+ * reuse the same plumbing when the layout folds NavBar actions onto a
+ * `native_root_tabs` sentinel.
+ */
+@Composable
+internal fun TopBarActionView(action: NativeUINode) {
+    val icon = action.props.getString("icon", "more_vert")
+    val disabled = action.props.getBool("disabled")
+    val subItems = action.children.filter { it.type == "top_bar_action" }
+    // Screen-reader name: `a11y_label` (NavAction::a11yLabel()), else the visible label.
+    val a11yLabel = action.props.getString("a11y_label").ifEmpty { action.props.getString("label") }
+
+    val label = action.props.getString("label", "")
+    val showLabel = action.props.getBool("show_label") && label.isNotEmpty()
+    val hasIcon = action.props.getString("icon", "").isNotEmpty()
+
+    if (subItems.isEmpty()) {
+        if (showLabel) {
+            // Text action ("Edit"-style); with an icon, icon + text.
+            TextButton(modifier = Modifier.semantics { contentDescription = a11yLabel }, enabled = !disabled, onClick = {
+                if (action.onPress != 0) {
+                    NativeElementBridge.sendPressEvent(action.onPress, action.id)
+                }
+            }) {
+                if (hasIcon || action.props.getString("image", "").isNotEmpty()) {
+                    TopBarActionGlyph(action, icon, "")
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(label)
+            }
+            return
+        }
+        // `enabled=false` swallows the tap and swaps LocalContentColor for
+        // the M3 disabled tone, so the icon greys out on its own.
+        IconButton(enabled = !disabled, onClick = {
+            if (action.onPress != 0) {
+                NativeElementBridge.sendPressEvent(action.onPress, action.id)
+            }
+        }) {
+            TopBarActionGlyph(action, icon, a11yLabel)
+        }
+    } else {
+        var expanded by remember { mutableStateOf(false) }
+        IconButton(enabled = !disabled, onClick = { expanded = true }) {
+            TopBarActionGlyph(action, icon, a11yLabel)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            subItems.forEach { item ->
+                if (item.props.getBool("divider")) {
+                    // Inline visual separator emitted by `NavAction::divider()`.
+                    HorizontalDivider()
+                    return@forEach
+                }
+                val itemLabel = item.props.getString("label", "")
+                val itemIcon = item.props.getString("icon", "")
+                val isDestructive = item.props.getBool("destructive")
+                val destructiveColor = MaterialTheme.colorScheme.error
+                DropdownMenuItem(
+                    enabled = !item.props.getBool("disabled"),
+                    text = {
+                        Text(
+                            itemLabel,
+                            color = if (isDestructive) destructiveColor else Color.Unspecified
+                        )
+                    },
+                    leadingIcon = if (itemIcon.isNotEmpty()) {
+                        {
+                            // `destructive()` should tint the whole row red — text +
+                            // icon — to mirror SwiftUI's `Button(role: .destructive)`
+                            // which colors both. Using the bare default leaves the
+                            // icon at LocalContentColor while the text reads red,
+                            // which scans as a styling glitch.
+                            if (isDestructive) {
+                                MaterialIcon(
+                                    name = itemIcon,
+                                    contentDescription = null,
+                                    tint = destructiveColor,
+                                )
+                            } else {
+                                MaterialIcon(name = itemIcon, contentDescription = null)
+                            }
+                        }
+                    } else null,
+                    onClick = {
+                        expanded = false
+                        if (item.onPress != 0) {
+                            NativeElementBridge.sendPressEvent(item.onPress, item.id)
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Paints a screen's flat background (`bg-*`, or its dark variant) on the
+ * box that the root renderers inset by the Scaffold padding. Without it the
+ * safe-area strips — beside the camera cutout and behind the navigation bar
+ * in landscape — showed the Scaffold colour instead of the screen's own,
+ * where iOS fills them with the screen background.
+ */
+@Composable
+internal fun Modifier.screenBackground(screen: NativeUINode?): Modifier {
+    val darkBg = if (isSystemInDarkTheme()) screen?.props?.getColor("dark_bg_color", 0) ?: 0 else 0
+    val bg = if (darkBg != 0) darkBg else (screen?.style?.bgColor ?: 0)
+
+    return if (bg != 0) this.background(argbToComposeColor(bg)) else this
+}
+
+/**
+ * The action's icon, or its `image` (e.g. the signed-in user's avatar) as a
+ * small circle when one is set. The icon is drawn first and the image laid
+ * over it, so the icon stays visible while the image loads and if it fails.
+ * Disabled actions fade the image like M3 fades the icon.
+ */
+@Composable
+internal fun TopBarActionGlyph(action: NativeUINode, icon: String, label: String) {
+    val image = action.props.getString("image", "")
+
+    if (image.isEmpty()) {
+        MaterialIcon(name = icon, contentDescription = label)
+        return
+    }
+
+    Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+        MaterialIcon(name = icon, contentDescription = null)
+        AsyncImage(
+            model = image,
+            contentDescription = label,
+            contentScale = ContentScale.Crop,
+            alpha = if (action.props.getBool("disabled")) 0.38f else 1f,
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape),
+        )
+    }
+}

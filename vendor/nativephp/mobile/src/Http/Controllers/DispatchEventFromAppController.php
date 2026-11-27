@@ -1,0 +1,147 @@
+<?php
+
+namespace Native\Mobile\Http\Controllers;
+
+use Closure;
+use Illuminate\Http\Request;
+use Native\Mobile\Events\Contracts\DispatchableFromNative;
+use Native\Mobile\Events\GlobalEventDispatcher;
+use Native\Mobile\Support\NativeCallbacks;
+use Native\Mobile\Support\NativeEventSignature;
+use ReflectionClass;
+use ReflectionFunction;
+
+class DispatchEventFromAppController
+{
+    public function __invoke(Request $request)
+    {
+        $eventClass = $request->input('event');
+        $payload = $request->input('payload', []);
+
+        // JavaScript in a web view can POST here (the `api` routes carry no
+        // middleware), so a page could forge a device event — firing the app's
+        // listeners and pending callbacks as if the device sent it (a forged
+        // PaymentCompleted, or Biometric\Completed(success: true)). Once the
+        // native shell signs its events, require a valid signature and drop
+        // anything a page fabricates. The marker gate below still runs as
+        // defense-in-depth on which classes may be constructed at all.
+        if (NativeEventSignature::enforced() && ! NativeEventSignature::verify($request)) {
+            return response()->json(['success' => false], 403);
+        }
+
+        // This endpoint constructs the named class and fires it. The class must
+        // be one the native side is allowed to dispatch — every device event
+        // implements DispatchableFromNative — or a page could name any
+        // autoloadable class and hand it constructor arguments of its own, an
+        // object-injection gadget (e.g. SplFileObject to truncate a file).
+        if (! is_string($eventClass)
+            || ! class_exists($eventClass)
+            || ! is_subclass_of($eventClass, DispatchableFromNative::class)) {
+            return response()->json([
+                'success' => false,
+            ]);
+        }
+
+        $event = new $eventClass(...$this->constructorArguments($eventClass, $payload));
+
+        // The device sent this event, and a native screen hears it through
+        // its own channel. The mark keeps the dispatcher from handing
+        // it to the live screen once more when event() runs it.
+        GlobalEventDispatcher::markFromNative($event);
+
+        // Existing path: dispatch to Laravel listeners and #[On] handlers. Untouched.
+        event($event);
+
+        // New path: fire any fluent callback registered for this capture
+        // (Camera::getPhoto()->photoTaken(...)). Coexists with the event above.
+        $handled = $this->fireCallback($eventClass, $payload, $event);
+
+        return response()->json([
+            'success' => true,
+            'callback' => $handled,
+        ]);
+    }
+
+    /**
+     * Drop payload keys the event's constructor doesn't declare. Native sides
+     * and plugins can add fields before the PHP event class catches up, and
+     * unpacking an unknown string key throws "Unknown named parameter".
+     * Positional payloads and variadic constructors pass through untouched.
+     */
+    protected function constructorArguments(string $eventClass, array $payload): array
+    {
+        if (array_is_list($payload)) {
+            return $payload;
+        }
+
+        $constructor = (new ReflectionClass($eventClass))->getConstructor();
+
+        if ($constructor === null) {
+            return [];
+        }
+
+        $names = [];
+
+        foreach ($constructor->getParameters() as $parameter) {
+            if ($parameter->isVariadic()) {
+                return $payload;
+            }
+
+            $names[$parameter->getName()] = true;
+        }
+
+        return array_filter(
+            $payload,
+            fn ($key) => is_int($key) || isset($names[$key]),
+            ARRAY_FILTER_USE_KEY
+        );
+    }
+
+    /**
+     * Resolve and invoke a callback correlated by the event's `id`, if one was
+     * registered. The callback receives the result event object.
+     */
+    protected function fireCallback(string $eventClass, array $payload, object $event): bool
+    {
+        $id = $payload['id'] ?? null;
+
+        // Exact correlation by id first. If that misses — either no id came back
+        // (some native paths drop it across a lifecycle bounce, and some events
+        // never carry one) or it didn't match — fall back to the single
+        // in-flight callback for this event class, mirroring the Edge loop.
+        $peek = ($id !== null) ? NativeCallbacks::resolve($id, $eventClass, consume: false) : null;
+
+        if ($peek === null) {
+            [$id, $peek] = NativeCallbacks::resolveByEvent($eventClass) ?? [null, null];
+        }
+
+        if ($peek === null) {
+            return false;
+        }
+
+        // A component-bound ($this) closure can only be fired correctly by the
+        // Edge component loop, which rebinds it to the live instance. In an Edge
+        // app the same event also arrives here via the WebView fetch; if we
+        // consumed it we'd run it against a dead instance (and race the Edge
+        // path for the one-shot registration). Peek without consuming and bail.
+        if ($peek instanceof Closure && (new ReflectionFunction($peek))->getClosureThis() !== null) {
+            return false;
+        }
+
+        $callback = NativeCallbacks::resolve($id, $eventClass);
+
+        // Normalise an invokable class-string into a resolved instance so it can
+        // be called like any other callable. Closures and [$obj, 'method'] arrays
+        // are already callable.
+        if (is_string($callback) && class_exists($callback)) {
+            $callback = app($callback);
+        }
+
+        call_user_func($callback, $event);
+
+        // One outcome per capture — drop the success/cancel/denied siblings too.
+        NativeCallbacks::forget($id, $eventClass);
+
+        return true;
+    }
+}

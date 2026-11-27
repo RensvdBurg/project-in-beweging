@@ -1,0 +1,922 @@
+import SwiftUI
+import WebKit
+
+extension NSNotification.Name {
+    public static let reloadWebViewNotification = NSNotification.Name("ReloadWebViewNotification")
+    public static let redirectToURLNotification = NSNotification.Name("RedirectToURLNotification")
+    public static let navigateWithInertiaNotification = NSNotification.Name("NavigateWithInertiaNotification")
+}
+
+struct ContentView: View {
+    @State private var phpOutput = ""
+    @ObservedObject private var nativeUIBridge = NativeUIBridge.shared
+    @ObservedObject private var bootState = BootState.shared
+    // PHP-set window background (`UI.SetBackground`); nil keeps the
+    // platform default. Shows behind screens and during transitions.
+    @ObservedObject private var windowBackground = WindowBackgroundState.shared
+    @Environment(\.colorScheme) private var colorScheme
+    // Last app-window orientation pushed to PHP (seeded from the first layout),
+    // so size changes only emit when the window aspect actually flips.
+    @State private var lastOrientation: String?
+
+    /// The base color native screens render over — the PHP override when
+    /// set, otherwise the system default.
+    private var screenBackground: Color {
+        windowBackground.color ?? Color(.systemBackground)
+    }
+
+    var body: some View {
+        // When native UI is active, render JUST the native tree —
+        // unmount the WebView entirely. Keeping the WebView alive
+        // alongside the SwiftUI overlay caused iOS 26's
+        // `Tab(role: .search)` floating Liquid Glass capsule to lose
+        // single-tap activation (likely WKWebView's UIKit hit-testing
+        // racing the capsule's gesture recognizer). The trade-off is a
+        // WebView remount when transitioning back from native UI; the
+        // WebView's `SharedWebView.shared` cache keeps that fast.
+        Group {
+            if nativeUIBridge.isActive, let tree = nativeUIBridge.currentTree {
+                // Two-layer swap. Screens are keyed by their screenKey in a
+                // ForEach so a screen keeps its IDENTITY when it changes
+                // role from "current" to "outgoing" — no removal transition
+                // fires at swap time and its view state survives. The
+                // incoming screen (new key) animates in via its insertion
+                // transition — the reliable half of SwiftUI's transition
+                // system — while the held outgoing screen's exit (parallax
+                // drift + dim, or static hold) is driven by ordinary
+                // animated modifiers in `ScreenExitModifier`. The outgoing
+                // entry is dropped by the bridge after the transition,
+                // invisibly beneath the opaque new screen.
+                ZStack {
+                    ForEach(activeScreens(currentTree: tree)) { screen in
+                        NativeTreeRenderer(tree: screen.tree)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(screenBackground)
+                            .modifier(ScreenExitModifier(
+                                isExiting: screen.isOutgoing,
+                                transition: nativeUIBridge.outgoingScreen?.transition
+                            ))
+                            // Parallax depth cue that survives dark mode:
+                            // the INCOMING screen casts a soft shadow onto
+                            // the outgoing one at its leading edge (the
+                            // scrim alone is black-on-black there). Active
+                            // only during the parallax transition window.
+                            .shadow(
+                                color: .black.opacity(incomingShadowOpacity(for: screen)),
+                                radius: 18,
+                                x: -10
+                            )
+                            .transition(nativeScreenTransition(for: nativeUIBridge.pendingTransition))
+                            // Shared-element plumbing. A screen on its way
+                            // out must stop reporting frames — the store
+                            // captured them at the swap and is flying from
+                            // them right now.
+                            .environment(\.heroIsOutgoing, screen.isOutgoing)
+                            // Each new screen sits above the previous one
+                            // (keys increment), so slides cover in push
+                            // order and a fade has a defined front/back.
+                            // EXCEPT the slide_to_bottom modal reveal: there
+                            // the OUTGOING layer must stay on top while it
+                            // slides down, revealing the incoming beneath.
+                            .zIndex(
+                                screen.isOutgoing
+                                    && nativeUIBridge.outgoingScreen?.transition == "slide_to_bottom"
+                                    ? Double(screen.id) + 10_000
+                                    : Double(screen.id)
+                            )
+                    }
+                }
+            } else if bootState.webViewAllowed {
+                WebViewLayoutContainer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // Native-direct boot, first tree not yet published: hold a
+                // plain background under the splash. Mounting the WebView
+                // container here would create the WKWebView and spawn its
+                // WebKit processes for nothing.
+                screenBackground.ignoresSafeArea()
+            }
+        }
+        // Shared elements in transit, drawn ABOVE both screens so a morph is
+        // never occluded by the incoming screen fading in over it. Renders
+        // nothing at all when no element is flying.
+        .overlay {
+            HeroFlightOverlay()
+        }
+        .overlay(alignment: .top) {
+            // Hot-reload indicator. Mirrors iOS 26's Liquid Glass pill
+            // language so it feels native and doesn't intrude on the
+            // user's content. Fades in/out around the ~500ms PHP
+            // reboot window. Bridge state owned by `NativeUIBridge.isReloading`.
+            if nativeUIBridge.isReloading {
+                HotReloadIndicator()
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(1)
+            }
+        }
+        // Per-transition swap animation — this ambient animation is what
+        // actually paces `.move` insertions (attached transition animations
+        // are ignored for `.move`; see nativeScreenSwapAnimation).
+        .animation(
+            nativeScreenSwapAnimation(for: nativeUIBridge.pendingTransition),
+            value: nativeUIBridge.screenKey
+        )
+        .animation(.easeInOut(duration: 0.2), value: nativeUIBridge.isActive)
+        .onChange(of: nativeUIBridge.isActive) { active in
+            // Native-first boot: the first published tree IS first content.
+            if active && !AppState.shared.isInitialized {
+                AppState.shared.markInitialized()
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: nativeUIBridge.isReloading)
+        // Global 3-finger swipe-right escape hatch (attaches a recognizer to the
+        // key window). Fires `JumpEscapeHatch`; the Jump client exits any
+        // connected demo app back to the Jump home.
+        .background(EscapeHatchGesture())
+        // Push a native AppearanceChanged event to PHP when the system theme
+        // flips (Control Center toggle, sunset auto-switch). Drives the
+        // reactive `System::appearance()` / `#[On(AppearanceChanged)]` path.
+        // ContentView is always mounted, so this observes every change.
+        .onChange(of: colorScheme) { _, newScheme in
+            let mode = newScheme == .dark ? "dark" : "light"
+            LaravelBridge.shared.send?("Native\\Mobile\\Events\\System\\AppearanceChanged", ["mode": mode])
+        }
+        // Push a native OrientationChanged event to PHP when the app window's
+        // aspect flips. Read the actual window on both the push and query paths:
+        // GeometryReader's safe-area frame can become landscape-shaped when an
+        // iPad keyboard appears even though the window remains portrait. Seeded
+        // on first layout so only a real flip emits. Drives the reactive
+        // `System::orientation()` / `#[On(OrientationChanged)]` path.
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear {
+                        lastOrientation = SystemFunctions.currentWindowOrientation()
+                    }
+                    .onChange(of: geometry.size) { _, _ in
+                        // Rotation and resizes change the safe area, and the root
+                        // web view otherwise only re-reads it on navigation.
+                        if let webView = SharedWebView.shared.webView {
+                            SharedWebView.shared.coordinator?.injectSafeAreaInsets(webView)
+                        }
+
+                        let orientation = SystemFunctions.currentWindowOrientation()
+                        guard orientation != lastOrientation else { return }
+                        lastOrientation = orientation
+                        LaravelBridge.shared.send?("Native\\Mobile\\Events\\System\\OrientationChanged", ["orientation": orientation])
+                    }
+            }
+            .ignoresSafeArea(.keyboard)
+        )
+    }
+
+    /// One layer of the two-layer native screen swap. `id` is the screen's
+    /// stable screenKey — ForEach identity, so a screen moving from the
+    /// "current" role to the "outgoing" role is the SAME view to SwiftUI.
+    private struct ActiveNativeScreen: Identifiable {
+        let id: Int
+        let tree: NativeUITree
+        let isOutgoing: Bool
+    }
+
+    /// Outgoing (held) screen first, current screen last. The outgoing
+    /// entry is present only during a transition window; the bridge clears
+    /// it ~0.6s after the swap.
+    private func activeScreens(currentTree: NativeUITree) -> [ActiveNativeScreen] {
+        var screens: [ActiveNativeScreen] = []
+        if let out = nativeUIBridge.outgoingScreen, out.key != nativeUIBridge.screenKey {
+            screens.append(ActiveNativeScreen(id: out.key, tree: out.tree, isOutgoing: true))
+        }
+        screens.append(ActiveNativeScreen(
+            id: nativeUIBridge.screenKey,
+            tree: currentTree,
+            isOutgoing: false
+        ))
+        return screens
+    }
+
+    /// Shadow the incoming screen casts on the held outgoing screen during
+    /// a parallax_push — zero (no shadow layer) at all other times.
+    private func incomingShadowOpacity(for screen: ActiveNativeScreen) -> Double {
+        guard !screen.isOutgoing,
+              let out = nativeUIBridge.outgoingScreen,
+              out.transition == "parallax_push" else { return 0 }
+        return 0.45
+    }
+
+}
+
+/// Liquid Glass pill shown briefly during hot reload. Two rows of
+/// content: a spinner + label. Auto-dismisses when
+/// `NativeUIBridge.isReloading` flips false (driven by the first
+/// publish from the rebooted PHP runtime — see
+/// `NativeElementBridge.postTreeUpdateFromRegion`).
+///
+/// Uses iOS 26's `.glassEffect` material when available; falls back
+/// to a thin material on earlier OSes.
+struct HotReloadIndicator: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+                .tint(.accentColor)
+            Text("Reloading…")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .modifier(GlassPillBackground())
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+    }
+}
+
+/// Wraps the glass / thin-material material lookup behind an iOS-26
+/// availability check. iOS 26+ gets the real Liquid Glass capsule;
+/// earlier versions fall back to a Capsule-shaped `.thinMaterial`.
+///
+/// The `#if` keeps `.glassEffect` out of the compilation entirely on
+/// pre-Xcode-26 toolchains, whose SDK has no such symbol — see
+/// `LiquidGlassAvailability.swift`.
+private struct GlassPillBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            content.glassEffect(in: .capsule)
+        } else {
+            fallback(content)
+        }
+        #else
+        fallback(content)
+        #endif
+    }
+
+    @ViewBuilder
+    private func fallback(_ content: Content) -> some View {
+        content.background(.thinMaterial, in: .capsule)
+    }
+}
+
+/// Shared WKWebView instance holder to persist across view updates
+class SharedWebView: ObservableObject {
+    static let shared = SharedWebView()
+    weak var webView: WKWebView?
+    var coordinator: WebView.Coordinator?
+}
+
+/// Container that hosts the single shared WebView instance. WebView-mode
+/// chrome (the Edge-bridge top bar / bottom nav / side nav) is gone —
+/// native chrome now comes exclusively from the element-collector path
+/// (NativeRootStack / NativeRootTabs), so this is just the full-bleed page.
+struct WebViewLayoutContainer: View {
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
+
+    var body: some View {
+        WebView(shared: SharedWebView.shared, horizontalSizeClass: horizontalSizeClass)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
+    }
+}
+
+struct WebView: UIViewRepresentable {
+    static let dataStore = WKWebsiteDataStore.default()
+    let shared: SharedWebView
+    let horizontalSizeClass: UserInterfaceSizeClass?
+
+    func makeCoordinator() -> Coordinator {
+        // Reuse existing coordinator if available to maintain LaravelBridge connection
+        if let existingCoordinator = shared.coordinator {
+            print("♻️ Reusing existing Coordinator")
+            return existingCoordinator
+        }
+
+        print("🆕 Creating new Coordinator")
+        let coordinator = Coordinator()
+        shared.coordinator = coordinator
+        return coordinator
+    }
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        // Don't remove observers or clear LaravelBridge when reusing the WebView
+        // The shared instance will persist and we'll re-register in makeUIView if needed
+        print("⚠️ dismantleUIView called - skipping observer removal for reused WebView")
+    }
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        let logger = ConsoleLogger()
+        var webView: WKWebView?
+        var hasCompletedInitialLoad = false
+
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            let scheme = url.scheme?.lowercased() ?? ""
+
+            // Rewrite http(s)://127.0.0.1 to php:// scheme — PHP/Symfony only understands
+            // http/https so redirect()->intended() and $request->fullUrl() will always
+            // produce http:// URLs for the local server. Route through the scheme handler's
+            // redirect path which handles cookie injection from WKHTTPCookieStore.
+            //
+            // PROTOTYPE: in a Jump WebView session, links the remote app emits point
+            // at the dev-server host (Laravel builds absolute URLs from the request
+            // Host). Treat that host like 127.0.0.1 — rewrite to php://127.0.0.1 and
+            // forward through the scheme handler — so navigations stay in the WebView
+            // instead of escaping to Safari. The forward's host:port comes from
+            // JumpWebViewSession, so the rewritten URL drops the remote host + port.
+            let isJumpHost = JumpWebViewSession.shared.isActive
+                && url.host == JumpWebViewSession.shared.host
+
+            if (scheme == "http" || scheme == "https"),
+               url.host == "127.0.0.1" || isJumpHost {
+                var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+                components?.scheme = "php"
+                components?.host = "127.0.0.1"
+                components?.port = nil
+                if let phpURL = components?.url {
+                    NotificationCenter.default.post(
+                        name: .redirectToURLNotification,
+                        object: nil,
+                        userInfo: ["url": phpURL.absoluteString]
+                    )
+                }
+                decisionHandler(.cancel)
+                return
+            }
+
+            // Open external URLs and system schemes with the system handler
+            if ["http", "https", "tel", "mailto", "sms", "facetime", "facetime-audio"].contains(scheme) {
+                UIApplication.shared.open(url)
+                decisionHandler(.cancel)
+            } else {
+                decisionHandler(.allow)
+            }
+        }
+
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            // A committed WebView page load means we are back in WebView mode
+            // (a Route::native screen never commits — its request blocks in the
+            // PHP event loop and only returns a redirect/empty body on exit).
+            // Without this, exit-to-web leaves `isActive == true`, so the frozen
+            // native tree stays on screen over the loaded WebView page.
+            NativeUIBridge.shared.isActive = false
+
+            // Inject safe area insets IMMEDIATELY when navigation commits (before rendering)
+            // This is the iOS equivalent of Android's onPageStarted
+            injectSafeAreaInsets(webView)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // On first load, dismiss the splash screen
+            if !hasCompletedInitialLoad {
+                hasCompletedInitialLoad = true
+                DispatchQueue.main.async {
+                    AppState.shared.markInitialized()
+                }
+            }
+
+            // Fade in WebView smoothly once initial page load is complete
+            DispatchQueue.main.async {
+                UIView.animate(withDuration: 0.2) {
+                    webView.alpha = 1.0
+                }
+            }
+
+            // Re-inject safe area insets to ensure they're set (like Android does)
+            injectSafeAreaInsets(webView)
+        }
+
+        func injectSafeAreaInsets(_ webView: WKWebView) {
+            // The web view's own window, so an external display's scene can't supply
+            // the insets. The first scene's window covers the first commit, before the
+            // web view is in a window.
+            let window = webView.window ?? UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first?.windows.first
+
+            let insets = window?.safeAreaInsets ?? .zero
+
+            // Also get color scheme for CSS variable
+            let isDarkMode = window?.traitCollection.userInterfaceStyle == .dark
+            let colorScheme = isDarkMode ? "dark" : "light"
+
+            let js = """
+            (function() {
+                // Set CSS variables directly on documentElement for immediate availability
+                if (document.documentElement) {
+                    document.documentElement.style.setProperty('--inset-top', '\(insets.top)px');
+                    document.documentElement.style.setProperty('--inset-right', '\(insets.right)px');
+                    document.documentElement.style.setProperty('--inset-bottom', '\(insets.bottom)px');
+                    document.documentElement.style.setProperty('--inset-left', '\(insets.left)px');
+                    document.documentElement.style.setProperty('--native-color-scheme', '\(colorScheme)');
+                }
+            })();
+            """
+
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        // Swipe gestures disabled for back/forward navigation
+        // @objc func handleSwipeLeft(_ gesture: UISwipeGestureRecognizer) {
+        //     if let webView = gesture.view as? WKWebView, webView.canGoForward {
+        //         webView.goForward()
+        //     }
+        // }
+
+        // @objc func handleSwipeRight(_ gesture: UISwipeGestureRecognizer) {
+        //     if let webView = gesture.view as? WKWebView, webView.canGoBack {
+        //         webView.goBack()
+        //     }
+        // }
+
+        @objc func redirectToURL(_ notification: Notification) {
+            if let urlString = notification.userInfo?["url"] as? String {
+                if let url = URL(string: urlString) {
+                    // Stop any current loading before starting new request
+                    if self.webView?.isLoading == true {
+                        self.webView?.stopLoading()
+                    }
+
+                    self.webView?.load(URLRequest(url: url))
+                }
+            }
+        }
+
+        /// Navigate using Inertia router if available, otherwise fall back to location.href
+        /// This allows native edge component clicks to integrate with Inertia.js for SPA-like navigation
+        @objc func navigateWithInertia(_ notification: Notification) {
+            guard let path = notification.userInfo?["path"] as? String else { return }
+
+            // Escape the path for JavaScript string
+            let escapedPath = path
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+
+            let js = """
+            (function() {
+                var path = "\(escapedPath)";
+                console.log('[NativePHP] Navigation requested:', path);
+
+                // Check if Inertia router is available
+                if (typeof window.router !== 'undefined' && typeof window.router.visit === 'function') {
+                    console.log('[NativePHP] Using Inertia router.visit():', path);
+                    window.router.visit(path);
+                } else {
+                    console.log('[NativePHP] Inertia not available, using location.href');
+                    window.location.href = path;
+                }
+            })();
+            """
+
+            self.webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        @objc func keyboardWillShow(_ notification: Notification) {
+            let js = "document.body.classList.add('keyboard-visible');"
+            self.webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        @objc func keyboardWillHide(_ notification: Notification) {
+            let js = "document.body.classList.remove('keyboard-visible');"
+            self.webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let coordinator = context.coordinator
+
+        // Reuse existing WebView if available (coordinator is also reused via makeCoordinator)
+        if let existingWebView = shared.webView {
+            print("♻️ Reusing existing WKWebView instance (coordinator already reused)")
+            // Ensure coordinator has reference to webView
+            coordinator.webView = existingWebView
+            existingWebView.navigationDelegate = coordinator
+            existingWebView.alpha = 1.0
+
+            // Observers are still registered (we don't remove them in dismantleUIView)
+            // LaravelBridge is still connected (we don't clear it in dismantleUIView)
+
+            return existingWebView
+        }
+
+        print("🆕 Creating new WKWebView instance with new Coordinator")
+
+        // Initialize the custom scheme handler
+        let schemeHandler = PHPSchemeHandler()
+
+        // Configure WKWebView with the custom scheme handler
+        let webConfiguration = WKWebViewConfiguration()
+
+        webConfiguration.websiteDataStore = WebView.dataStore
+        webConfiguration.setURLSchemeHandler(schemeHandler, forURLScheme: "php")
+        webConfiguration.allowsInlineMediaPlayback = true
+
+        #if DEBUG
+        // Allow the WebView to load HTTP subresources (e.g. Vite dev server assets)
+        // without being blocked by WebKit's mixed content policy, since the custom
+        // php:// scheme is treated as a secure context.
+        // Uses responds(to:) to safely check the key exists before setting it,
+        // since this is an internal WebKit preference not available on all platforms.
+        let insecureContentSelector = NSSelectorFromString("setAllowRunningInsecureContent:")
+        if webConfiguration.preferences.responds(to: insecureContentSelector) {
+            webConfiguration.preferences.setValue(true, forKey: "allowRunningInsecureContent")
+        }
+        #endif
+
+        let webView = WKWebView(frame: .zero, configuration: webConfiguration)
+
+        // Store webView in coordinator and shared instance
+        coordinator.webView = webView
+        shared.webView = webView
+        shared.coordinator = coordinator
+
+        addDebugSupport(webView: webView, context: context)
+
+        addNativeHelper(webView: webView)
+
+        addSwipeGestureSupport(webView: webView, context: context)
+
+        // Configure scrollView for proper safe area handling with viewport-fit=cover
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+
+        let fallbackPath = Bundle.main.path(forResource: "index", ofType: "html")
+        let fallbackURL = URL(fileURLWithPath: fallbackPath!)
+
+        // Set initial opacity to 0 for smooth fade-in (instead of hiding)
+        webView.alpha = 0.0
+
+        // Give AppDelegate time to process any launch deep links before deciding what to load
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DebugLogger.shared.log("🌐 WebView setup after AppDelegate delay")
+
+            // Check for pending deep link BEFORE marking ready
+            // (marking ready might process and clear the pending URL immediately)
+            let hasPendingDeepLink = DeepLinkRouter.shared.hasPendingURL()
+
+            // Mark WebView as ready (this may trigger pending URL processing)
+            DeepLinkRouter.shared.markWebViewReady()
+
+            // Only load default URL if there was no pending deep link
+            if !hasPendingDeepLink {
+                // EXIT_WEB from a native-direct boot lands here with the
+                // exit destination pending; otherwise load the start URL.
+                let startPath = BootState.shared.pendingWebPath ?? NativePHPApp.getStartURL()
+                BootState.shared.pendingWebPath = nil
+                DebugLogger.shared.log("🌐 Loading \(startPath)")
+                let startPage = URL(string: "php://127.0.0.1\(startPath)")
+                webView.load(URLRequest(url: startPage ?? fallbackURL))
+            } else {
+                DebugLogger.shared.log("🌐 Pending deep link detected, skipping default URL load")
+            }
+        }
+
+        // Register NotificationCenter observers
+        // (reloadWebViewNotification is handled app-wide by HotReloadCoordinator,
+        // registered at launch — a native-direct boot never runs makeUIView, so
+        // reload handling must not live here.)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.redirectToURL),
+            name: .redirectToURLNotification,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.navigateWithInertia),
+            name: .navigateWithInertiaNotification,
+            object: nil
+        )
+
+        // Keyboard visibility observers
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.keyboardWillShow),
+            name: UIResponder.keyboardWillShowNotification,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.keyboardWillHide),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
+
+        return webView
+    }
+
+    func addDebugSupport(webView: WKWebView, context: Context) {
+        #if DEBUG
+        let userContentController = webView.configuration.userContentController
+        let consoleLoggingScript = """
+        (function() {
+            function capture(type) {
+                var old = console[type];
+                console[type] = function() {
+                    var message = Array.prototype.slice.call(arguments).join(" ");
+                    window.webkit.messageHandlers.console.postMessage({ type: type, message: message });
+                    old.apply(console, arguments);
+                };
+            }
+            ['log', 'warn', 'error', 'debug'].forEach(capture);
+        })();
+        """
+
+        let userScript = WKUserScript(source: consoleLoggingScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        userContentController.addUserScript(userScript)
+        userContentController.add(context.coordinator.logger, name: "console")
+
+        webView.isInspectable = true
+        #endif
+    }
+
+    func addNativeHelper(webView: WKWebView) {
+        LaravelBridge.shared.registerPageWebView(webView)
+
+        let contentController = webView.configuration.userContentController
+
+        // Inject safe area CSS FIRST at document start to prevent layout jump
+        let safeAreaCSS = """
+        (function() {
+            var style = document.createElement('style');
+            style.textContent = ':root{--inset-top:env(safe-area-inset-top,0px);--inset-right:env(safe-area-inset-right,0px);--inset-bottom:env(safe-area-inset-bottom,0px);--inset-left:env(safe-area-inset-left,0px)}@media(orientation:landscape){.nativephp-safe-area{padding-right:var(--inset-right);padding-left:var(--inset-left)}}@media(orientation:portrait){.nativephp-safe-area{padding-top:var(--inset-top);padding-bottom:var(--inset-bottom)}}';
+            (document.head || document.documentElement).appendChild(style);
+        })();
+        """
+        let safeAreaScript = WKUserScript(
+            source: safeAreaCSS,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        contentController.addUserScript(safeAreaScript)
+
+        // Blob, File and FormData request bodies, before any page script
+        // runs and in every frame. See bodyShimScript.
+        let bodyShim = WKUserScript(
+            source: Self.bodyShimScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        contentController.addUserScript(bodyShim)
+
+        // Inject Native helper and other functionality at document end
+        let helper = """
+        const Native = {
+            on: (event, callback) => {
+                document.addEventListener("native-event", function (e) {
+                    event = event.replace(/^(\\\\)+/, '');
+                    e.detail.event = e.detail.event.replace(/^(\\\\)+/, '');
+
+                    if (event === e.detail.event) {
+                        return callback(e.detail.payload, event);
+                    }
+                });
+            },
+        };
+
+        window.Native = Native;
+
+        document.addEventListener("native-event", function (e) {
+            e.detail.event = e.detail.event.replace(/^(\\\\)+/, '');
+
+            if (window.Livewire) {
+                window.Livewire.dispatch('native:' + e.detail.event, e.detail.payload);
+            }
+        });
+
+        (function() {
+            // Add platform identifier class
+            document.body.classList.add('nativephp-ios');
+
+            // Disable text selection
+            document.body.style.userSelect = "none";
+        })();
+        """
+        let script = WKUserScript(
+            source: helper,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        )
+        contentController.addUserScript(script)
+    }
+
+    /// WebKit never hands a Blob, File or FormData request body to a custom
+    /// scheme handler (WebKit bug 197237): those requests reach
+    /// `PHPSchemeHandler` with no body at all, and so does a multipart
+    /// `<form>` navigation that carries a file. An ArrayBuffer body does
+    /// arrive. So for requests to the app itself (php:), this turns those
+    /// bodies into an ArrayBuffer plus an explicit Content-Type before they
+    /// are sent, using the browser's own encoder so the bytes and the
+    /// multipart boundary stay exact. No bridge call is involved.
+    ///
+    /// - fetch and XMLHttpRequest: the body is serialized, then sent as an
+    ///   ArrayBuffer. An author-set Content-Type is kept.
+    /// - multipart forms with a file: the serialized form is posted to
+    ///   `PHPSchemeHandler.formStashPath`, then the form is submitted for
+    ///   real. The navigation arrives without a body and the scheme handler
+    ///   uses the stashed one. Submit handlers that call preventDefault()
+    ///   (Livewire, Inertia) run first and win.
+    static let bodyShimScript = """
+    (function () {
+        if (window.__nativephpBodyShim) { return; }
+        window.__nativephpBodyShim = true;
+
+        var STASH_PATH = '/_native/form-body';
+        var originalFetch = window.fetch;
+
+        function isAppURL(url) {
+            try { return new URL(url, location.href).protocol === 'php:'; } catch (e) { return false; }
+        }
+
+        function needsSerializing(body) {
+            return body != null && (
+                (typeof Blob !== 'undefined' && body instanceof Blob) ||
+                (typeof FormData !== 'undefined' && body instanceof FormData));
+        }
+
+        // The browser's own encoder: the exact bytes, and for FormData a
+        // Content-Type whose boundary matches them.
+        function serialize(body) {
+            var response = new Response(body);
+            return response.arrayBuffer().then(function (buffer) {
+                return { type: response.headers.get('Content-Type') || '', buffer: buffer };
+            });
+        }
+
+        if (originalFetch) {
+            window.fetch = function (input, init) {
+                var args = arguments;
+                var self = this;
+                try {
+                    var isRequest = typeof Request !== 'undefined' && input instanceof Request;
+                    if (isAppURL(isRequest ? input.url : String(input))) {
+                        if (init && needsSerializing(init.body)) {
+                            return serialize(init.body).then(function (s) {
+                                var headers = new Headers(init.headers || (isRequest ? input.headers : undefined));
+                                if (s.type && !headers.has('Content-Type')) { headers.set('Content-Type', s.type); }
+                                return originalFetch.call(window, input, Object.assign({}, init, { body: s.buffer, headers: headers }));
+                            }, function () { return originalFetch.apply(self, args); });
+                        }
+                        if (isRequest && !(init && init.body != null) && input.method !== 'GET' && input.method !== 'HEAD' && !input.bodyUsed) {
+                            // A Request built around its own body.
+                            return input.clone().arrayBuffer().then(function (buffer) {
+                                return originalFetch.call(window, new Request(input, { body: buffer }), init);
+                            }, function () { return originalFetch.apply(self, args); });
+                        }
+                    }
+                } catch (e) {}
+                return originalFetch.apply(this, arguments);
+            };
+        }
+
+        var xhr = XMLHttpRequest.prototype;
+        var originalOpen = xhr.open;
+        var originalSend = xhr.send;
+        var originalSetRequestHeader = xhr.setRequestHeader;
+
+        xhr.open = function (method, url) {
+            this.__nativephp = {
+                url: url == null ? '' : String(url),
+                async: arguments.length < 3 || !!arguments[2],
+                contentType: false
+            };
+            return originalOpen.apply(this, arguments);
+        };
+
+        xhr.setRequestHeader = function (name, value) {
+            if (this.__nativephp && String(name).toLowerCase() === 'content-type') {
+                this.__nativephp.contentType = true;
+            }
+            return originalSetRequestHeader.apply(this, arguments);
+        };
+
+        xhr.send = function (body) {
+            var state = this.__nativephp;
+            if (state && needsSerializing(body) && isAppURL(state.url)) {
+                if (!state.async) {
+                    console.error('NativePHP: a synchronous XMLHttpRequest cannot send a Blob, File or FormData body to the app. Make the request asynchronous.');
+                    return originalSend.apply(this, arguments);
+                }
+                var request = this;
+                serialize(body).then(function (s) {
+                    if (s.type && !state.contentType) { originalSetRequestHeader.call(request, 'Content-Type', s.type); }
+                    originalSend.call(request, s.buffer);
+                }).catch(function () {
+                    try { originalSend.call(request, body); } catch (e) {}
+                });
+                return;
+            }
+            return originalSend.apply(this, arguments);
+        };
+
+        var originalSubmit = HTMLFormElement.prototype.submit;
+
+        // What a multipart POST of this form would send, or null when the
+        // form doesn't need help (WebKit sends it fine on its own).
+        function formPlan(form, submitter) {
+            function pick(attribute, property, fallback) {
+                return submitter && submitter.hasAttribute && submitter.hasAttribute(attribute) ? submitter[property] : fallback;
+            }
+            var method = String(pick('formmethod', 'formMethod', form.method)).toLowerCase();
+            var enctype = String(pick('formenctype', 'formEnctype', form.enctype)).toLowerCase();
+            var action = pick('formaction', 'formAction', form.action);
+            var target = pick('formtarget', 'formTarget', form.getAttribute('target') || '');
+            if (method !== 'post' || enctype !== 'multipart/form-data' || !isAppURL(action) || target === '_blank') {
+                return null;
+            }
+
+            var data;
+            try {
+                data = submitter ? new FormData(form, submitter) : new FormData(form);
+            } catch (e) {
+                data = new FormData(form);
+                if (submitter && submitter.name) { data.append(submitter.name, submitter.value); }
+            }
+
+            var hasFile = false;
+            data.forEach(function (value) {
+                if (typeof File !== 'undefined' && value instanceof File) { hasFile = true; }
+            });
+            if (!hasFile) { return null; }
+
+            var key = new URL(action, location.href);
+            key.hash = '';
+            return { data: data, action: action, target: target, key: key.href };
+        }
+
+        function stashThenSubmit(form, plan) {
+            serialize(plan.data).then(function (s) {
+                return originalFetch.call(window, STASH_PATH, {
+                    method: 'POST',
+                    body: s.buffer,
+                    headers: {
+                        'Content-Type': s.type,
+                        'X-NativePHP-Form-Stash': '1',
+                        'X-NativePHP-Form-Action': plan.key
+                    }
+                });
+            }).then(function (response) {
+                if (!response.ok) { throw new Error('stash answered ' + response.status); }
+            }).catch(function (e) {
+                console.error('NativePHP: could not prepare the form upload, submitting without it', e);
+            }).then(function () {
+                // Submit for real, as the submitter asked. The attributes are
+                // read when submit() is called, so restore them straight after.
+                var names = ['action', 'method', 'enctype', 'target'];
+                var saved = names.map(function (name) { return form.getAttribute(name); });
+                form.setAttribute('action', plan.action);
+                form.setAttribute('method', 'post');
+                form.setAttribute('enctype', 'multipart/form-data');
+                if (plan.target) { form.setAttribute('target', plan.target); } else { form.removeAttribute('target'); }
+                try {
+                    originalSubmit.call(form);
+                } finally {
+                    names.forEach(function (name, i) {
+                        if (saved[i] === null) { form.removeAttribute(name); } else { form.setAttribute(name, saved[i]); }
+                    });
+                }
+            });
+        }
+
+        window.addEventListener('submit', function (event) {
+            if (event.defaultPrevented || !(event.target instanceof HTMLFormElement)) { return; }
+            var plan = formPlan(event.target, event.submitter || null);
+            if (!plan) { return; }
+            event.preventDefault();
+            stashThenSubmit(event.target, plan);
+        });
+
+        HTMLFormElement.prototype.submit = function () {
+            var plan = formPlan(this, null);
+            if (!plan) { return originalSubmit.call(this); }
+            stashThenSubmit(this, plan);
+        };
+    })();
+    """
+
+    func addSwipeGestureSupport(webView: WKWebView, context: Context) {
+        webView.navigationDelegate = context.coordinator
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        // No manual insets needed - safeAreaInset handles topbar automatically
+        // Bottom nav uses its own safeAreaInset in WebViewLayoutContainer
+    }
+}
+
+class ConsoleLogger: NSObject, WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let body = message.body as? [String: Any],
+           let type = body["type"] as? String,
+           let logMessage = body["message"] as? String {
+            print()
+            print("JS \(type): \(logMessage)")
+        }
+    }
+}

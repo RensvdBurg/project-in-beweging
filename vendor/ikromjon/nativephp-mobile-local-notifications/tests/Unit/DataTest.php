@@ -1,0 +1,782 @@
+<?php
+
+declare(strict_types=1);
+
+use Ikromjon\LocalNotifications\Data\NotificationAction;
+use Ikromjon\LocalNotifications\Data\NotificationOptions;
+use Ikromjon\LocalNotifications\Enums\BridgeFunction;
+use Ikromjon\LocalNotifications\Enums\NotificationPriority;
+use Ikromjon\LocalNotifications\Enums\PermissionStatus;
+use Ikromjon\LocalNotifications\Enums\RepeatInterval;
+use Ikromjon\LocalNotifications\LocalNotifications;
+
+describe('BridgeFunction', function (): void {
+    it('has correct string values for all cases', function (): void {
+        expect(BridgeFunction::Schedule->value)->toBe('LocalNotifications.Schedule')
+            ->and(BridgeFunction::Cancel->value)->toBe('LocalNotifications.Cancel')
+            ->and(BridgeFunction::CancelAll->value)->toBe('LocalNotifications.CancelAll')
+            ->and(BridgeFunction::GetPending->value)->toBe('LocalNotifications.GetPending')
+            ->and(BridgeFunction::RequestPermission->value)->toBe('LocalNotifications.RequestPermission')
+            ->and(BridgeFunction::CheckPermission->value)->toBe('LocalNotifications.CheckPermission')
+            ->and(BridgeFunction::Update->value)->toBe('LocalNotifications.Update');
+    });
+
+    it('has exactly 7 cases', function (): void {
+        expect(BridgeFunction::cases())->toHaveCount(7);
+    });
+
+    it('can be created from string value', function (): void {
+        expect(BridgeFunction::from('LocalNotifications.Schedule'))->toBe(BridgeFunction::Schedule)
+            ->and(BridgeFunction::from('LocalNotifications.Cancel'))->toBe(BridgeFunction::Cancel);
+    });
+
+    it('returns null for invalid string with tryFrom', function (): void {
+        expect(BridgeFunction::tryFrom('InvalidFunction'))->toBeNull();
+    });
+});
+
+describe('PermissionStatus', function (): void {
+    it('has correct string values for all cases', function (): void {
+        expect(PermissionStatus::Granted->value)->toBe('granted')
+            ->and(PermissionStatus::Denied->value)->toBe('denied')
+            ->and(PermissionStatus::NotDetermined->value)->toBe('not_determined');
+    });
+
+    it('has exactly 3 cases', function (): void {
+        expect(PermissionStatus::cases())->toHaveCount(3);
+    });
+
+    it('can be created from string value', function (): void {
+        expect(PermissionStatus::from('granted'))->toBe(PermissionStatus::Granted)
+            ->and(PermissionStatus::from('denied'))->toBe(PermissionStatus::Denied)
+            ->and(PermissionStatus::from('not_determined'))->toBe(PermissionStatus::NotDetermined);
+    });
+
+    it('returns null for invalid string with tryFrom', function (): void {
+        expect(PermissionStatus::tryFrom('unknown'))->toBeNull();
+    });
+});
+
+describe('RepeatInterval', function (): void {
+    it('has correct string values for all cases', function (): void {
+        expect(RepeatInterval::Minute->value)->toBe('minute')
+            ->and(RepeatInterval::Hourly->value)->toBe('hourly')
+            ->and(RepeatInterval::Daily->value)->toBe('daily')
+            ->and(RepeatInterval::Weekly->value)->toBe('weekly')
+            ->and(RepeatInterval::Monthly->value)->toBe('monthly')
+            ->and(RepeatInterval::Yearly->value)->toBe('yearly');
+    });
+
+    it('has exactly 6 cases', function (): void {
+        expect(RepeatInterval::cases())->toHaveCount(6);
+    });
+
+    it('can be created from string value', function (): void {
+        expect(RepeatInterval::from('daily'))->toBe(RepeatInterval::Daily)
+            ->and(RepeatInterval::from('weekly'))->toBe(RepeatInterval::Weekly);
+    });
+
+    it('returns null for invalid string with tryFrom', function (): void {
+        expect(RepeatInterval::tryFrom('biweekly'))->toBeNull();
+    });
+});
+
+describe('NotificationPriority', function (): void {
+    it('has correct string values for all cases', function (): void {
+        expect(NotificationPriority::Low->value)->toBe('low')
+            ->and(NotificationPriority::Default->value)->toBe('default')
+            ->and(NotificationPriority::High->value)->toBe('high')
+            ->and(NotificationPriority::Urgent->value)->toBe('urgent');
+    });
+
+    it('has exactly 4 cases', function (): void {
+        expect(NotificationPriority::cases())->toHaveCount(4);
+    });
+
+    it('can be created from string value', function (): void {
+        expect(NotificationPriority::from('low'))->toBe(NotificationPriority::Low)
+            ->and(NotificationPriority::from('urgent'))->toBe(NotificationPriority::Urgent);
+    });
+
+    it('returns null for invalid string with tryFrom', function (): void {
+        expect(NotificationPriority::tryFrom('critical'))->toBeNull();
+    });
+});
+
+describe('NotificationAction', function (): void {
+    it('creates with required fields only', function (): void {
+        $action = new NotificationAction(id: 'reply', title: 'Reply');
+
+        expect($action->id)->toBe('reply')
+            ->and($action->title)->toBe('Reply')
+            ->and($action->destructive)->toBeFalse()
+            ->and($action->input)->toBeFalse();
+    });
+
+    it('converts to array with only set flags', function (): void {
+        $action = new NotificationAction(id: 'reply', title: 'Reply');
+
+        expect($action->toArray())->toBe([
+            'id' => 'reply',
+            'title' => 'Reply',
+        ]);
+    });
+
+    it('includes destructive flag when true', function (): void {
+        $action = new NotificationAction(id: 'delete', title: 'Delete', destructive: true);
+
+        expect($action->toArray())->toBe([
+            'id' => 'delete',
+            'title' => 'Delete',
+            'destructive' => true,
+        ]);
+    });
+
+    it('includes input flag when true', function (): void {
+        $action = new NotificationAction(id: 'reply', title: 'Reply', input: true);
+
+        expect($action->toArray())->toBe([
+            'id' => 'reply',
+            'title' => 'Reply',
+            'input' => true,
+        ]);
+    });
+
+    it('includes both flags when both are true', function (): void {
+        $action = new NotificationAction(id: 'reply-delete', title: 'Reply & Delete', destructive: true, input: true);
+
+        expect($action->toArray())->toBe([
+            'id' => 'reply-delete',
+            'title' => 'Reply & Delete',
+            'destructive' => true,
+            'input' => true,
+        ]);
+    });
+
+    it('excludes false flags from array', function (): void {
+        $action = new NotificationAction(id: 'basic', title: 'Basic', destructive: false, input: false);
+
+        expect($action->toArray())->toBe([
+            'id' => 'basic',
+            'title' => 'Basic',
+        ]);
+    });
+});
+
+describe('NotificationOptions', function (): void {
+    it('creates with required fields only', function (): void {
+        $options = new NotificationOptions(
+            id: 'test-1',
+            title: 'Test',
+            body: 'Body',
+        );
+
+        expect($options->toArray())->toBe([
+            'id' => 'test-1',
+            'title' => 'Test',
+            'body' => 'Body',
+        ]);
+    });
+
+    it('includes all optional fields when set', function (): void {
+        $options = new NotificationOptions(
+            id: 'full-test',
+            title: 'Full',
+            body: 'Body',
+            delay: 60,
+            at: 1700000000,
+            repeat: RepeatInterval::Daily,
+            sound: true,
+            badge: 5,
+            data: ['key' => 'value'],
+            subtitle: 'Sub',
+            image: 'https://example.com/img.jpg',
+            bigText: 'Long text',
+        );
+
+        expect($options->toArray())->toBe([
+            'id' => 'full-test',
+            'title' => 'Full',
+            'body' => 'Body',
+            'delay' => 60,
+            'at' => 1700000000,
+            'repeat' => 'daily',
+            'sound' => true,
+            'badge' => 5,
+            'data' => ['key' => 'value'],
+            'subtitle' => 'Sub',
+            'image' => 'https://example.com/img.jpg',
+            'bigText' => 'Long text',
+        ]);
+    });
+
+    it('converts RepeatInterval enum to string', function (): void {
+        $options = new NotificationOptions(
+            id: 'enum',
+            title: 'Test',
+            body: 'Body',
+            repeat: RepeatInterval::Monthly,
+        );
+
+        expect($options->toArray()['repeat'])->toBe('monthly');
+    });
+
+    it('normalizes known repeat string to enum', function (): void {
+        $options = new NotificationOptions(
+            id: 'normalize',
+            title: 'Test',
+            body: 'Body',
+            repeat: 'daily',
+        );
+
+        expect($options->repeat)->toBe(RepeatInterval::Daily);
+    });
+
+    it('preserves unknown repeat string as-is', function (): void {
+        $options = new NotificationOptions(
+            id: 'unknown',
+            title: 'Test',
+            body: 'Body',
+            repeat: 'biweekly',
+        );
+
+        expect($options->repeat)->toBe('biweekly');
+    });
+
+    it('passes string repeat value unchanged', function (): void {
+        $options = new NotificationOptions(
+            id: 'string',
+            title: 'Test',
+            body: 'Body',
+            repeat: 'weekly',
+        );
+
+        expect($options->toArray()['repeat'])->toBe('weekly');
+    });
+
+    it('converts actions to arrays', function (): void {
+        $options = new NotificationOptions(
+            id: 'actions-test',
+            title: 'Test',
+            body: 'Body',
+            actions: [
+                new NotificationAction(id: 'reply', title: 'Reply', input: true),
+                new NotificationAction(id: 'delete', title: 'Delete', destructive: true),
+            ],
+        );
+
+        $array = $options->toArray();
+
+        expect($array['actions'])->toHaveCount(2)
+            ->and($array['actions'][0])->toBe(['id' => 'reply', 'title' => 'Reply', 'input' => true])
+            ->and($array['actions'][1])->toBe(['id' => 'delete', 'title' => 'Delete', 'destructive' => true]);
+    });
+
+    it('includes repeatIntervalSeconds in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'custom',
+            title: 'Custom',
+            body: 'Body',
+            repeatIntervalSeconds: 7200,
+        );
+
+        $array = $options->toArray();
+
+        expect($array['repeatIntervalSeconds'])->toBe(7200)
+            ->and($array)->not->toHaveKey('repeat');
+    });
+
+    it('throws when both repeat and repeatIntervalSeconds are set', function (): void {
+        $options = new NotificationOptions(
+            id: 'conflict',
+            title: 'Conflict',
+            body: 'Body',
+            repeat: RepeatInterval::Daily,
+            repeatIntervalSeconds: 3600,
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, 'Cannot use both "repeat" and "repeatIntervalSeconds"');
+
+    it('throws when repeatIntervalSeconds is less than 60', function (): void {
+        $options = new NotificationOptions(
+            id: 'too-short',
+            title: 'Too Short',
+            body: 'Body',
+            repeatIntervalSeconds: 30,
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, 'repeatIntervalSeconds must be at least 60 seconds');
+
+    it('allows exactly 60 seconds for repeatIntervalSeconds', function (): void {
+        $options = new NotificationOptions(
+            id: 'min-interval',
+            title: 'Min Interval',
+            body: 'Body',
+            repeatIntervalSeconds: 60,
+        );
+
+        expect($options->toArray()['repeatIntervalSeconds'])->toBe(60);
+    });
+
+    it('includes repeatDays in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'weekdays',
+            title: 'Weekday Alarm',
+            body: 'Wake up!',
+            at: 1700000000,
+            repeatDays: [1, 2, 3, 4, 5],
+        );
+
+        $array = $options->toArray();
+
+        expect($array['repeatDays'])->toBe([1, 2, 3, 4, 5])
+            ->and($array)->not->toHaveKey('repeat')
+            ->and($array)->not->toHaveKey('repeatIntervalSeconds');
+    });
+
+    it('deduplicates repeatDays', function (): void {
+        $options = new NotificationOptions(
+            id: 'dupes',
+            title: 'Test',
+            body: 'Body',
+            at: 1700000000,
+            repeatDays: [1, 1, 3, 3, 5],
+        );
+
+        expect($options->toArray()['repeatDays'])->toBe([1, 3, 5]);
+    });
+
+    it('throws when repeatDays used with repeat', function (): void {
+        $options = new NotificationOptions(
+            id: 'conflict',
+            title: 'Test',
+            body: 'Body',
+            at: 1700000000,
+            repeat: RepeatInterval::Daily,
+            repeatDays: [1, 3],
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, 'Cannot use "repeatDays" with "repeat" or "repeatIntervalSeconds"');
+
+    it('throws when repeatDays used without at', function (): void {
+        $options = new NotificationOptions(
+            id: 'no-at',
+            title: 'Test',
+            body: 'Body',
+            repeatDays: [1, 3],
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, '"repeatDays" requires "at" to determine the time of day');
+
+    it('throws when repeatDays has invalid day number', function (): void {
+        $options = new NotificationOptions(
+            id: 'bad-day',
+            title: 'Test',
+            body: 'Body',
+            at: 1700000000,
+            repeatDays: [0, 8],
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, 'Each value in "repeatDays" must be between 1 (Monday) and 7 (Sunday)');
+
+    it('includes repeatCount in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'counted',
+            title: 'Counted',
+            body: 'Body',
+            repeat: RepeatInterval::Daily,
+            repeatCount: 5,
+        );
+
+        $array = $options->toArray();
+
+        expect($array['repeatCount'])->toBe(5)
+            ->and($array['repeat'])->toBe('daily');
+    });
+
+    it('includes repeatCount with repeatIntervalSeconds', function (): void {
+        $options = new NotificationOptions(
+            id: 'counted-custom',
+            title: 'Counted Custom',
+            body: 'Body',
+            repeatIntervalSeconds: 3600,
+            repeatCount: 10,
+        );
+
+        $array = $options->toArray();
+
+        expect($array['repeatCount'])->toBe(10)
+            ->and($array['repeatIntervalSeconds'])->toBe(3600);
+    });
+
+    it('includes repeatCount with repeatDays', function (): void {
+        $options = new NotificationOptions(
+            id: 'counted-days',
+            title: 'Counted Days',
+            body: 'Body',
+            at: 1700000000,
+            repeatDays: [1, 3, 5],
+            repeatCount: 4,
+        );
+
+        $array = $options->toArray();
+
+        expect($array['repeatCount'])->toBe(4)
+            ->and($array['repeatDays'])->toBe([1, 3, 5]);
+    });
+
+    it('throws when repeatCount is less than 1', function (): void {
+        $options = new NotificationOptions(
+            id: 'bad-count',
+            title: 'Bad Count',
+            body: 'Body',
+            repeat: RepeatInterval::Daily,
+            repeatCount: 0,
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, 'repeatCount must be at least 1');
+
+    it('throws when repeatCount is used without repeat mechanism', function (): void {
+        $options = new NotificationOptions(
+            id: 'no-repeat',
+            title: 'No Repeat',
+            body: 'Body',
+            repeatCount: 3,
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, '"repeatCount" requires a repeat mechanism');
+
+    it('throws when actions exceed default max of 3', function (): void {
+        $options = new NotificationOptions(
+            id: 'too-many',
+            title: 'Too Many',
+            body: 'Body',
+            actions: [
+                new NotificationAction(id: 'a1', title: 'A1'),
+                new NotificationAction(id: 'a2', title: 'A2'),
+                new NotificationAction(id: 'a3', title: 'A3'),
+                new NotificationAction(id: 'a4', title: 'A4'),
+            ],
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, 'at most 3 action buttons');
+
+    it('throws when actions exceed custom max_actions', function (): void {
+        config()->set('local-notifications.max_actions', 2);
+
+        $options = new NotificationOptions(
+            id: 'too-many',
+            title: 'Too Many',
+            body: 'Body',
+            actions: [
+                new NotificationAction(id: 'a1', title: 'A1'),
+                new NotificationAction(id: 'a2', title: 'A2'),
+                new NotificationAction(id: 'a3', title: 'A3'),
+            ],
+        );
+
+        $options->toArray();
+    })->throws(InvalidArgumentException::class, 'at most 2 action buttons');
+
+    it('allows actions at default max of 3', function (): void {
+        $options = new NotificationOptions(
+            id: 'ok',
+            title: 'OK',
+            body: 'Body',
+            actions: [
+                new NotificationAction(id: 'a1', title: 'A1'),
+                new NotificationAction(id: 'a2', title: 'A2'),
+                new NotificationAction(id: 'a3', title: 'A3'),
+            ],
+        );
+
+        expect($options->toArray()['actions'])->toHaveCount(3);
+    });
+
+    it('includes zero delay in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'zero-delay',
+            title: 'Test',
+            body: 'Body',
+            delay: 0,
+        );
+
+        expect($options->toArray())->toHaveKey('delay', 0);
+    });
+
+    it('includes zero badge in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'zero-badge',
+            title: 'Test',
+            body: 'Body',
+            badge: 0,
+        );
+
+        expect($options->toArray())->toHaveKey('badge', 0);
+    });
+
+    it('includes zero at in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'zero-at',
+            title: 'Test',
+            body: 'Body',
+            at: 0,
+        );
+
+        expect($options->toArray())->toHaveKey('at', 0);
+    });
+
+    it('includes soundName in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'custom-sound',
+            title: 'Test',
+            body: 'Body',
+            sound: true,
+            soundName: 'alert.wav',
+        );
+
+        expect($options->toArray()['soundName'])->toBe('alert.wav')
+            ->and($options->toArray()['sound'])->toBeTrue();
+    });
+
+    it('excludes soundName when null', function (): void {
+        $options = new NotificationOptions(
+            id: 'no-sound-name',
+            title: 'Test',
+            body: 'Body',
+            sound: true,
+        );
+
+        expect($options->toArray())->not->toHaveKey('soundName');
+    });
+
+    it('includes sound false in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'silent',
+            title: 'Test',
+            body: 'Body',
+            sound: false,
+        );
+
+        expect($options->toArray()['sound'])->toBeFalse();
+    });
+
+    it('excludes null optional fields from array', function (): void {
+        $options = new NotificationOptions(
+            id: 'minimal',
+            title: 'Test',
+            body: 'Body',
+        );
+
+        $array = $options->toArray();
+
+        expect($array)->not->toHaveKey('delay')
+            ->and($array)->not->toHaveKey('at')
+            ->and($array)->not->toHaveKey('repeat')
+            ->and($array)->not->toHaveKey('sound')
+            ->and($array)->not->toHaveKey('soundName')
+            ->and($array)->not->toHaveKey('badge')
+            ->and($array)->not->toHaveKey('data')
+            ->and($array)->not->toHaveKey('subtitle')
+            ->and($array)->not->toHaveKey('image')
+            ->and($array)->not->toHaveKey('bigText')
+            ->and($array)->not->toHaveKey('actions')
+            ->and($array)->not->toHaveKey('repeatIntervalSeconds')
+            ->and($array)->not->toHaveKey('repeatDays')
+            ->and($array)->not->toHaveKey('repeatCount')
+            ->and($array)->not->toHaveKey('priority')
+            ->and($array)->not->toHaveKey('silent');
+    });
+
+    it('handles empty actions array', function (): void {
+        $options = new NotificationOptions(
+            id: 'no-actions',
+            title: 'Test',
+            body: 'Body',
+            actions: [],
+        );
+
+        expect($options->toArray()['actions'])->toBe([]);
+    });
+
+    it('preserves non-sequential repeatDays order', function (): void {
+        $options = new NotificationOptions(
+            id: 'non-seq',
+            title: 'Test',
+            body: 'Body',
+            at: 1700000000,
+            repeatDays: [7, 1, 3],
+        );
+
+        expect($options->toArray()['repeatDays'])->toBe([7, 1, 3]);
+    });
+
+    it('includes priority enum as string in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'priority-enum',
+            title: 'Test',
+            body: 'Body',
+            priority: NotificationPriority::High,
+        );
+
+        expect($options->toArray()['priority'])->toBe('high');
+    });
+
+    it('includes priority string in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'priority-string',
+            title: 'Test',
+            body: 'Body',
+            priority: 'urgent',
+        );
+
+        expect($options->toArray()['priority'])->toBe('urgent');
+    });
+
+    it('normalizes known priority string to enum', function (): void {
+        $options = new NotificationOptions(
+            id: 'normalize-priority',
+            title: 'Test',
+            body: 'Body',
+            priority: 'low',
+        );
+
+        expect($options->priority)->toBe(NotificationPriority::Low);
+    });
+
+    it('preserves unknown priority string as-is', function (): void {
+        $options = new NotificationOptions(
+            id: 'unknown-priority',
+            title: 'Test',
+            body: 'Body',
+            priority: 'critical',
+        );
+
+        expect($options->priority)->toBe('critical');
+    });
+
+    it('excludes priority when null', function (): void {
+        $options = new NotificationOptions(
+            id: 'no-priority',
+            title: 'Test',
+            body: 'Body',
+        );
+
+        expect($options->toArray())->not->toHaveKey('priority');
+    });
+
+    it('includes silent true in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'silent-true',
+            title: 'Test',
+            body: 'Body',
+            silent: true,
+        );
+
+        expect($options->toArray()['silent'])->toBeTrue();
+    });
+
+    it('includes silent false in array', function (): void {
+        $options = new NotificationOptions(
+            id: 'silent-false',
+            title: 'Test',
+            body: 'Body',
+            silent: false,
+        );
+
+        expect($options->toArray()['silent'])->toBeFalse();
+    });
+
+    it('excludes silent when null', function (): void {
+        $options = new NotificationOptions(
+            id: 'no-silent',
+            title: 'Test',
+            body: 'Body',
+        );
+
+        expect($options->toArray())->not->toHaveKey('silent');
+    });
+
+    it('includes both priority and silent together', function (): void {
+        $options = new NotificationOptions(
+            id: 'both',
+            title: 'Test',
+            body: 'Body',
+            priority: NotificationPriority::High,
+            silent: true,
+        );
+
+        $array = $options->toArray();
+
+        expect($array['priority'])->toBe('high')
+            ->and($array['silent'])->toBeTrue();
+    });
+
+    it('can be passed to schedule method', function (): void {
+        $capturedData = null;
+
+        stubNativephpCall(function (string $function, string $data) use (&$capturedData): string {
+            $capturedData = json_decode($data, true);
+
+            return json_encode(['success' => true]);
+        });
+
+        $notifications = new LocalNotifications;
+
+        $options = new NotificationOptions(
+            id: 'dto-test',
+            title: 'DTO Test',
+            body: 'Testing DTO',
+            delay: 30,
+            repeat: RepeatInterval::Hourly,
+        );
+
+        $result = $notifications->schedule($options);
+
+        unset($capturedData['_config']);
+        expect($result)->toBe(['success' => true])
+            ->and($capturedData)->toBe([
+                'id' => 'dto-test',
+                'title' => 'DTO Test',
+                'body' => 'Testing DTO',
+                'delay' => 30,
+                'repeat' => 'hourly',
+            ]);
+    });
+});
+
+describe('NotificationOptions reserved ids', function (): void {
+    it('throws when the id ends in _snooze', function (): void {
+        (new NotificationOptions(
+            id: 'task_snooze',
+            title: 'Test',
+            body: 'Body',
+        ))->toArray();
+    })->throws(InvalidArgumentException::class, 'reserved for internal sub-notifications');
+
+    it('throws when the id ends in a day-of-week suffix', function (): void {
+        (new NotificationOptions(
+            id: 'habit_day_3',
+            title: 'Test',
+            body: 'Body',
+        ))->toArray();
+    })->throws(InvalidArgumentException::class, 'reserved for internal sub-notifications');
+
+    it('allows ids merely containing the reserved suffixes', function (): void {
+        $options = new NotificationOptions(
+            id: 'task_snooze_reminder',
+            title: 'Test',
+            body: 'Body',
+        );
+
+        expect($options->toArray()['id'])->toBe('task_snooze_reminder');
+    });
+});

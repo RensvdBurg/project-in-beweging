@@ -1,0 +1,85 @@
+{
+  "_fonts-HwZkLpck.css": {
+    "file": "assets/fonts-HwZkLpck.css",
+    "src": "_fonts-HwZkLpck.css"
+  },
+  "_montserrat-variable-normal-l_AIctKy.woff2": {
+    "file": "assets/montserrat-variable-normal-l_AIctKy.woff2",
+    "src": "_montserrat-variable-normal-l_AIctKy.woff2"
+  },
+  "resources/css/app.css": {
+    "file": "assets/app-K4h5qFeY.css",
+    "name": "app",
+    "names": [
+      "app.css"
+    ],
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/css/learn-page-transition.css": {
+    "file": "assets/learn-page-transition-D_z1cN69.css",
+    "name": "learn-page-transition",
+    "names": [
+      "learn-page-transition.css"
+    ],
+    "src": "resources/css/learn-page-transition.css",
+    "isEntry": true
+  },
+  "resources/js/account-page.js": {
+    "file": "assets/account-page-DNADvTB3.js",
+    "name": "account-page",
+    "src": "resources/js/account-page.js",
+    "isEntry": true
+  },
+  "resources/js/activities.js": {
+    "file": "assets/activities-domeyCKe.js",
+    "name": "activities",
+    "src": "resources/js/activities.js",
+    "isEntry": true,
+    "dynamicImports": [
+      "vendor/nativephp/mobile/resources/dist/native.js"
+    ]
+  },
+  "resources/js/community.js": {
+    "file": "assets/community-CFH3jsj6.js",
+    "name": "community",
+    "src": "resources/js/community.js",
+    "isEntry": true
+  },
+  "resources/js/footer-nav.js": {
+    "file": "assets/footer-nav-BiJgQcZj.js",
+    "name": "footer-nav",
+    "src": "resources/js/footer-nav.js",
+    "isEntry": true
+  },
+  "resources/js/home.js": {
+    "file": "assets/home-ButnldYk.js",
+    "name": "home",
+    "src": "resources/js/home.js",
+    "isEntry": true
+  },
+  "resources/js/learn.js": {
+    "file": "assets/learn-C4MXkcWa.js",
+    "name": "learn",
+    "src": "resources/js/learn.js",
+    "isEntry": true
+  },
+  "resources/js/login.js": {
+    "file": "assets/login-05qhvkGX.js",
+    "name": "login",
+    "src": "resources/js/login.js",
+    "isEntry": true
+  },
+  "resources/js/settings-page.js": {
+    "file": "assets/settings-page-X2JRunSd.js",
+    "name": "settings-page",
+    "src": "resources/js/settings-page.js",
+    "isEntry": true
+  },
+  "vendor/nativephp/mobile/resources/dist/native.js": {
+    "file": "assets/native-fQD4kCzI.js",
+    "name": "native",
+    "src": "vendor/nativephp/mobile/resources/dist/native.js",
+    "isDynamicEntry": true
+  }
+}

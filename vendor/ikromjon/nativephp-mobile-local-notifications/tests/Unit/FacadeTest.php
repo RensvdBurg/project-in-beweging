@@ -1,0 +1,76 @@
+<?php
+
+declare(strict_types=1);
+
+use Ikromjon\LocalNotifications\Facades\LocalNotifications;
+use Ikromjon\LocalNotifications\LocalNotifications as LocalNotificationsClass;
+
+it('resolves to the correct class', function (): void {
+    $facade = LocalNotifications::getFacadeRoot();
+
+    expect($facade)->toBeInstanceOf(LocalNotificationsClass::class);
+});
+
+it('proxies schedule calls to the underlying class', function (): void {
+    stubNativephpCall(fn (): string|false => json_encode(['success' => true, 'id' => 'facade-test']));
+
+    $result = LocalNotifications::schedule([
+        'id' => 'facade-test',
+        'title' => 'Facade Test',
+        'body' => 'Testing facade',
+    ]);
+
+    expect($result)->toBe(['success' => true, 'id' => 'facade-test']);
+});
+
+it('proxies cancel calls to the underlying class', function (): void {
+    stubNativephpCall(fn (): string|false => json_encode(['success' => true]));
+
+    $result = LocalNotifications::cancel('some-id');
+
+    expect($result)->toBe(['success' => true]);
+});
+
+it('proxies cancelAll calls to the underlying class', function (): void {
+    stubNativephpCall(fn (): string|false => json_encode(['success' => true]));
+
+    $result = LocalNotifications::cancelAll();
+
+    expect($result)->toBe(['success' => true]);
+});
+
+it('proxies getPending calls to the underlying class', function (): void {
+    stubNativephpCall(fn (): string|false => json_encode(['success' => true, 'count' => 0]));
+
+    $result = LocalNotifications::getPending();
+
+    expect($result)->toBe(['success' => true, 'count' => 0]);
+});
+
+it('proxies requestPermission calls to the underlying class', function (): void {
+    stubNativephpCall(fn (): string|false => json_encode(['granted' => true]));
+
+    $result = LocalNotifications::requestPermission();
+
+    expect($result)->toBe(['granted' => true]);
+});
+
+it('proxies checkPermission calls to the underlying class', function (): void {
+    stubNativephpCall(fn (): string|false => json_encode(['status' => 'granted']));
+
+    $result = LocalNotifications::checkPermission();
+
+    expect($result)->toBe(['status' => 'granted']);
+});
+
+it('proxies update calls to the underlying class', function (): void {
+    stubNativephpCall(fn (): string|false => json_encode(['success' => true, 'id' => 'update-test']));
+
+    $result = LocalNotifications::update('update-test', [
+        'id' => 'update-test',
+        'title' => 'Updated',
+        'body' => 'Body',
+    ]);
+
+    expect($result)->toBe(['success' => true, 'id' => 'update-test']);
+});

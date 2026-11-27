@@ -1,0 +1,1074 @@
+package com.nativephp.mobile.bridge
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.util.Log
+import com.nativephp.mobile.security.AppKeyStore
+import java.io.File
+import java.io.FileOutputStream
+import java.io.FileInputStream
+import java.io.BufferedInputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import org.json.JSONObject
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
+class LaravelEnvironment(private val context: Context) {
+    private val appStorageDir = context.getDir("storage", Context.MODE_PRIVATE)
+    private val phpBridge = PHPBridge(context)
+
+    // Cached bundle metadata to avoid reading ZIP multiple times
+    private var bundleMetadataCache: BundleMetadata? = null
+
+    private external fun nativeSetEnv(name: String, value: String, overwrite: Int): Int
+
+    // Data class to hold bundle metadata read from ZIP
+    private data class BundleMetadata(
+        val version: String?,
+        val versionCode: String?,
+        val bifrostAppId: String?,
+        val runtimeMode: String?,
+        // What this shell ships with, so a lane cannot offer it a release that
+        // predates its own code.
+        val shellBuiltAt: String? = null,
+        val shellCommit: String? = null
+    )
+
+    companion object {
+        // Process-wide lock around Laravel bundle extraction. MainActivity and
+        // PHPSchedulerWorker each construct their own LaravelEnvironment, so an
+        // instance-level lock wouldn't serialize them. Without this, an updated
+        // APK + queued WorkManager job can run an ephemeral PHP task against a
+        // mid-delete / mid-extract vendor/ tree and fail with
+        // `Class "Native\Mobile\Runtime" not found`.
+        //
+        // Internal (not private): PHPBridge.bootPersistentRuntime takes this
+        // same lock so the persistent php_embed_init can never overlap the
+        // classic embed init/shutdown cycles of runBaseArtisanCommands from a
+        // concurrently-created activity — the two paths use different native
+        // mutexes, and a classic php_embed_shutdown mid-boot guts the
+        // persistent interpreter's module/class state (boots "in 13ms", then
+        // every dispatch 500s with `Class "Native\Mobile\Runtime" not found`).
+        internal val extractionLock = ReentrantLock()
+
+        // Classic (embed-per-command) artisan cannot run a second time in a
+        // process where the persistent PHP runtime has been shut down — the
+        // TSRM re-init SEGVs in ts_resource_ex. That happens when an activity
+        // is re-created in a process a plugin foreground service kept alive.
+        // The base commands are idempotent per install, so run them at most
+        // once per process; the re-created activity skips straight to the
+        // persistent boot (the same shutdown→boot cycle hot reload already
+        // exercises safely).
+        @Volatile private var baseArtisanRanThisProcess = false
+
+        private const val TAG = "LaravelEnvironment"
+
+        // File and directory names
+        private const val BUNDLE_ZIP = "laravel_bundle.zip"
+        private const val BUNDLE_META = "bundle_meta.json"
+        private const val OTA_MARKER = ".ota_applied"
+        private const val VERSION_FILE = ".version"
+        private const val ENV_FILE = ".env"
+        private const val CACERT_FILE = "cacert.pem"
+        private const val PHP_INI_FILE = "php.ini"
+        // Plain-text APP_KEY written by earlier versions; AppKeyStore migrates it.
+        private const val LEGACY_APP_KEY_FILE = "persisted_data/appkey.txt"
+
+        // Directory paths
+        private const val DIR_LARAVEL = "laravel"
+        private const val DIR_UPDATES = "updates"
+        private const val PENDING_ZIP = "pending.zip"
+        private const val PENDING_MANIFEST = "pending.json"
+        private const val OTA_MANIFEST = "ota.json"
+        private const val DIR_PERSISTED = "persisted_data"
+        private const val DIR_STORAGE = "persisted_data/storage"
+        private const val DIR_FRAMEWORK = "persisted_data/storage/framework"
+        private const val DIR_VIEWS = "persisted_data/storage/framework/views"
+        private const val DIR_SESSIONS = "persisted_data/storage/framework/sessions"
+        private const val DIR_CACHE = "persisted_data/storage/framework/cache"
+        private const val DIR_LOGS = "persisted_data/storage/logs"
+        private const val DIR_APP = "persisted_data/storage/app"
+        private const val DIR_PUBLIC = "persisted_data/storage/app/public"
+        private const val DIR_DATABASE = "persisted_data/database/"
+        private const val DIR_PHP_SESSIONS = "php_sessions"
+
+        // Version constants
+        private const val VERSION_DEBUG = "DEBUG"
+
+        // Environment variable regex patterns
+        private const val REGEX_APP_VERSION = "(?m)^NATIVEPHP_APP_VERSION=(.+)$"
+        private const val REGEX_APP_VERSION_CODE = "(?m)^NATIVEPHP_APP_VERSION_CODE=(.+)$"
+        private const val REGEX_BIFROST_ID = "BIFROST_APP_ID=(.+)"
+
+        /**
+         * Build the composite identity ("version+b+versionCode" or "DEBUG") used to
+         * decide whether the embedded Laravel bundle needs to be re-extracted.
+         */
+        private fun buildVersionId(version: String?, versionCode: String?): String? {
+            if (version == null) return null
+            val cleanVersion = version.trim().trim('"').trim('\'')
+            if (cleanVersion.equals(VERSION_DEBUG, ignoreCase = true)) {
+                return VERSION_DEBUG
+            }
+            val cleanCode = versionCode?.trim()?.trim('"')?.trim('\'') ?: "0"
+            return "${cleanVersion}b${cleanCode}"
+        }
+
+        init {
+            System.loadLibrary("php_wrapper")
+        }
+
+        /**
+         * Read runtime_mode from bundle_meta.json. Returns "persistent" (default) or "classic".
+         */
+        fun getRuntimeMode(context: Context): String {
+            return try {
+                val json = context.assets.open(BUNDLE_META).bufferedReader().use { it.readText() }
+                val obj = JSONObject(json)
+                if (obj.has("runtime_mode") && !obj.isNull("runtime_mode")) {
+                    obj.getString("runtime_mode")
+                } else {
+                    "persistent"
+                }
+            } catch (e: Exception) {
+                "persistent"
+            }
+        }
+
+        /**
+         * Read NATIVEPHP_START_URL from the extracted .env file
+         */
+        fun getStartURL(context: Context): String {
+            val appStorageDir = context.getDir("storage", Context.MODE_PRIVATE)
+            val laravelDir = File(appStorageDir, "laravel")
+            val envFile = File(laravelDir, ".env")
+
+            if (!envFile.exists()) {
+                Log.d(TAG, "⚙️ No .env file found, using default start URL")
+                return "/"
+            }
+
+            try {
+                val envContent = envFile.readText()
+                val pattern = Regex("""NATIVEPHP_START_URL\s*=\s*([^\r\n]+)""")
+                val match = pattern.find(envContent)
+
+                if (match != null) {
+                    var value = match.groupValues[1]
+                        .trim()
+                        .trim('"', '\'')
+
+                    if (value.isNotEmpty()) {
+                        // Ensure path starts with /
+                        if (!value.startsWith("/")) {
+                            value = "/$value"
+                        }
+                        Log.d(TAG, "⚙️ Found start URL in .env: $value")
+                        return value
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "⚠️ Error reading .env file", e)
+            }
+
+            Log.d(TAG, "⚙️ No NATIVEPHP_START_URL found, using default: /")
+            return "/"
+        }
+    }
+
+    fun initialize() {
+        try {
+            // Process reuse: a live/parked persistent runtime means this
+            // process was started by the current APK install (a new install
+            // always kills the process), so the extracted tree is already
+            // this build's. Re-extracting would rm -rf vendor/ + views
+            // UNDER the running PHP runtime, poisoning its realpath/stat
+            // caches — the next request dies with "PHP Startup: stat
+            // failed" on files that exist on disk. Skip entirely.
+            if (phpBridge.isPersistentMode()) {
+                Log.d(TAG, "⚡ Persistent runtime alive — skipping bundle extraction (process reuse)")
+                return
+            }
+
+            setupDirectories()
+
+            // OTA check/download lives in the mobile-ota plugin. Core only
+            // applies pending zips from {appStorageDir}/updates on boot.
+
+            // Hold the lock across extraction AND the post-extraction steps
+            // (.env writes + classic artisan). A second activity's init thread
+            // otherwise unblocks after the extraction alone, skips artisan via
+            // baseArtisanRanThisProcess, and boots the persistent runtime
+            // while THIS thread is still cycling classic embeds — see the
+            // extractionLock comment for the failure that causes.
+            extractionLock.withLock {
+                val didBundle = extractLaravelBundleUnlocked()
+                val didPending = applyPendingUpdatesUnlocked()
+                val didExtract = didBundle || didPending
+
+                setupEnvironment(didExtract)
+
+                // Only run artisan commands when files were actually extracted/changed
+                if (didExtract) {
+                    Log.d(TAG, "📦 Running post-extraction artisan commands...")
+                    runBaseArtisanCommands()
+                } else {
+                    Log.d(TAG, "⚡ Skipping artisan commands — no extraction needed")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing Laravel environment", e)
+            throw RuntimeException("Failed to initialize Laravel environment", e)
+        }
+    }
+
+    /**
+     * Extract Laravel bundle if needed. Returns true if extraction was performed.
+     * Serialized process-wide via extractionLock so MainActivity's init thread and
+     * a WorkManager worker can't clobber each other mid-extract. Safe to call from
+     * either path; the isUpToDate check inside short-circuits repeat callers.
+     */
+    private fun extractLaravelBundle(): Boolean = extractionLock.withLock {
+        val didBundle = extractLaravelBundleUnlocked()
+        val didPending = applyPendingUpdatesUnlocked()
+        didBundle || didPending
+    }
+
+    private fun extractLaravelBundleUnlocked(): Boolean {
+        val laravelDir = File(appStorageDir, DIR_LARAVEL)
+        val otaMarkerFile = File(laravelDir, OTA_MARKER)
+
+        // Two questions, in this order, and neither may answer the other:
+        //
+        //   1. Which shell am I? The baked bundle against .version. A store
+        //      update means new native code, so its payload must win — an OTA
+        //      applied to the previous shell belongs to a fingerprint that no
+        //      longer describes this app.
+        //   2. Which release am I? A payload queued by the OTA client, which
+        //      applies on top of the shell it was fetched for.
+        //
+        // The OTA marker used to short-circuit step 1 entirely, so a store
+        // update silently kept running OTA'd code from the shell before it.
+
+        // A bundle is identified by its version number and build number
+        // (NATIVEPHP_APP_VERSION and NATIVEPHP_APP_VERSION_CODE), as "1.0.0b42",
+        // and is only extracted when that differs from the one extracted last.
+        // This is on purpose: two builds with the same pair count as the same
+        // build, so a rebuild installed over the top keeps running the old code
+        // until the build number is bumped. DEBUG always extracts. iOS does the
+        // same in AppUpdateManager.
+        val bundleMeta = readBundleMetadata()
+        val embeddedId = buildVersionId(bundleMeta.version, bundleMeta.versionCode)
+
+        if (embeddedId == null) {
+            Log.e(TAG, "❌ Couldn't read version from laravel_bundle.zip")
+            return false
+        }
+
+        Log.d(TAG, "🔍 DEBUG: embeddedId from bundle = '$embeddedId'")
+
+        // Identity of what's currently extracted. The .version marker written
+        // after extraction is authoritative — it records the embedded composite
+        // verbatim. Recomputing from the extracted .env is only a legacy
+        // fallback, and it MUST NOT be preferred: .env carries no
+        // NATIVEPHP_APP_VERSION_CODE line, so the recompute yields "…b0"
+        // against bundle_meta.json's "…b1" and the app re-extracts the whole
+        // bundle on EVERY cold boot — several seconds of splash each launch.
+        val currentId = if (laravelDir.exists()) {
+            val versionFile = File(laravelDir, VERSION_FILE)
+            val envFile = File(laravelDir, ENV_FILE)
+            if (versionFile.exists()) {
+                versionFile.readText().trim().ifEmpty { null }
+            } else if (envFile.exists()) {
+                buildVersionId(getVersionFromEnvFile(envFile), getVersionCodeFromEnvFile(envFile))
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+
+        Log.d(TAG, "🔍 DEBUG: currentId = '${currentId ?: "none"}'")
+
+        // If DEBUG mode, ALWAYS extract. Otherwise, only extract if composites don't match.
+        val isDebug = embeddedId.equals(VERSION_DEBUG, ignoreCase = true)
+        val isUpToDate = currentId == embeddedId
+        val shouldExtract = isDebug || !isUpToDate
+
+        Log.d(TAG, "🔍 DEBUG: isUpToDate = $isUpToDate, isDebug = $isDebug, shouldExtract = $shouldExtract")
+
+        if (!shouldExtract) {
+            Log.d(TAG, "✅ Laravel already up to date (id $embeddedId)")
+
+            // A queued payload is the caller's second question, not this one's.
+            return false
+        }
+
+        Log.d(TAG, "📦 Extracting Laravel bundle — current: ${currentId ?: "none"}, embedded: $embeddedId")
+
+        // Delete entire laravel directory - persisted_data is separate and safe
+        if (laravelDir.exists()) {
+            // Check for symlinks before deletion
+            val laravelStorage = File(laravelDir, "storage")
+
+            Log.d(TAG, "🗑️ CALLING BASH RM NOW...")
+            // WORKAROUND: Kotlin's deleteRecursively() has a bug that deletes persisted_data!
+            // Use system rm command instead
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("rm", "-rf", laravelDir.absolutePath))
+                process.waitFor()
+                Log.d(TAG, "✅ BASH RM COMPLETED (exit code: ${process.exitValue()})")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ BASH RM FAILED: ${e.message}")
+                // Fallback - try to delete what we can
+                laravelDir.listFiles()?.forEach { it.delete() }
+            }
+        }
+
+        laravelDir.mkdirs()
+
+        try {
+            val zipStream = context.assets.open(BUNDLE_ZIP)
+            unzip(zipStream, laravelDir)
+
+            // Back to the bundled shell: the marker and any queued payload
+            // describe the previous one, and a payload built against a
+            // fingerprint this shell no longer has must never be applied.
+            if (otaMarkerFile.exists()) {
+                otaMarkerFile.delete()
+            }
+            File(File(appStorageDir, DIR_UPDATES), PENDING_ZIP).delete()
+
+            // Record WHAT WAS JUST EXTRACTED: the embedded composite, verbatim.
+            // Recomputing from the extracted .env loses the version code (no
+            // NATIVEPHP_APP_VERSION_CODE line) and wrote "…b0" here while the
+            // staleness check compared against "…b1" — a permanent
+            // re-extraction loop.
+            File(laravelDir, VERSION_FILE).writeText(embeddedId)
+            clearCompiledCaches()
+            Log.d(TAG, "✅ Updated .version file to: $embeddedId")
+
+            Log.d(TAG, "✅ Extraction complete to ${laravelDir.absolutePath}")
+
+            // Create storage structure for hot reload compatibility
+            // Even though we use persisted_data/storage, hot reload needs laravel/storage/framework to exist
+            val laravelStorageFramework = File(laravelDir, "storage/framework")
+            laravelStorageFramework.mkdirs()
+            Log.d(TAG, "✅ Created laravel/storage/framework for hot reload")
+
+            // Create bootstrap/cache directory (required for Laravel's cache operations)
+            val bootstrapCache = File(laravelDir, "bootstrap/cache")
+            bootstrapCache.mkdirs()
+            Log.d(TAG, "✅ Created laravel/bootstrap/cache for Laravel cache operations")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to extract Laravel zip", e)
+        }
+
+        return true
+    }
+
+    /**
+     * Read bundle metadata from bundle_meta.json (fast path) or ZIP scan (fallback).
+     * Results are cached to avoid redundant reads.
+     */
+    private fun readBundleMetadata(): BundleMetadata {
+        // Return cached value if available
+        bundleMetadataCache?.let { return it }
+
+        // Fast path: read pre-built metadata file (written at build time)
+        try {
+            val json = context.assets.open(BUNDLE_META).bufferedReader().use { it.readText() }
+            val obj = JSONObject(json)
+            val version = if (obj.has("version")) obj.getString("version") else null
+            val versionCode = when {
+                !obj.has("version_code") || obj.isNull("version_code") -> null
+                else -> obj.get("version_code").toString()
+            }
+            val bifrostAppId = if (obj.has("bifrost_app_id") && !obj.isNull("bifrost_app_id")) obj.getString("bifrost_app_id") else null
+            val runtimeMode = if (obj.has("runtime_mode") && !obj.isNull("runtime_mode")) obj.getString("runtime_mode") else null
+            val shellBuiltAt = if (obj.has("shell_built_at") && !obj.isNull("shell_built_at")) obj.getString("shell_built_at") else null
+            val shellCommit = if (obj.has("shell_commit") && !obj.isNull("shell_commit")) obj.getString("shell_commit") else null
+            Log.d(TAG, "⚡ Read bundle_meta.json: version=$version, version_code=$versionCode, bifrost=$bifrostAppId, runtime_mode=$runtimeMode")
+            val metadata = BundleMetadata(version, versionCode, bifrostAppId, runtimeMode, shellBuiltAt, shellCommit)
+            bundleMetadataCache = metadata
+            return metadata
+        } catch (e: Exception) {
+            Log.d(TAG, "bundle_meta.json not found, falling back to ZIP scan")
+        }
+
+        // Slow fallback: scan ZIP for .env and .version
+        var version: String? = null
+        var versionCode: String? = null
+        var bifrostAppId: String? = null
+        var versionIdFromVersionFile: String? = null
+
+        try {
+            val zis = ZipInputStream(context.assets.open(BUNDLE_ZIP) as java.io.InputStream)
+            var entry: ZipEntry?
+
+            while (zis.nextEntry.also { entry = it } != null) {
+                when (entry?.name) {
+                    ENV_FILE -> {
+                        val envContent = zis.bufferedReader().readText()
+                        version = Regex(REGEX_APP_VERSION).find(envContent)?.groupValues?.get(1)?.trim()
+                        versionCode = Regex(REGEX_APP_VERSION_CODE).find(envContent)?.groupValues?.get(1)?.trim()
+                        bifrostAppId = Regex(REGEX_BIFROST_ID).find(envContent)?.groupValues?.get(1)?.trim()
+                    }
+                    VERSION_FILE -> {
+                        // .version contains the composite id (e.g. "1.0.0b42") used as a fallback
+                        // when .env can't be parsed.
+                        versionIdFromVersionFile = zis.bufferedReader().readText().trim()
+                    }
+                }
+            }
+            zis.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read bundle metadata", e)
+        }
+
+        // If .env didn't yield a version but .version did, decompose the composite back
+        // into version + versionCode so the metadata shape stays consistent.
+        if (version == null && versionIdFromVersionFile != null) {
+            val (parsedVersion, parsedCode) = parseVersionId(versionIdFromVersionFile)
+            version = parsedVersion
+            versionCode = parsedCode
+        }
+
+        val metadata = BundleMetadata(version, versionCode, bifrostAppId, null)
+        bundleMetadataCache = metadata
+        return metadata
+    }
+
+    /**
+     * Decompose a composite version id ("1.0.0b42" or "DEBUG") back into its parts.
+     * Used when .version is the only metadata source available.
+     */
+    private fun parseVersionId(id: String): Pair<String?, String?> {
+        if (id.equals(VERSION_DEBUG, ignoreCase = true)) {
+            return Pair(VERSION_DEBUG, null)
+        }
+        val sepIndex = id.lastIndexOf('b')
+        if (sepIndex <= 0 || sepIndex == id.length - 1) {
+            return Pair(id, null)
+        }
+        return Pair(id.substring(0, sepIndex), id.substring(sepIndex + 1))
+    }
+
+    private fun getVersionFromEnvFile(envFile: File): String? {
+        return try {
+            val envContent = envFile.readText()
+            Regex(REGEX_APP_VERSION).find(envContent)?.groupValues?.get(1)?.trim()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read version from .env file", e)
+            null
+        }
+    }
+
+    private fun getVersionCodeFromEnvFile(envFile: File): String? {
+        return try {
+            val envContent = envFile.readText()
+            Regex(REGEX_APP_VERSION_CODE).find(envContent)?.groupValues?.get(1)?.trim()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read version code from .env file", e)
+            null
+        }
+    }
+
+    /** The native:run payload identifies itself as DEBUG rather than as a version. */
+    private fun isDebugBundle(): Boolean {
+        val embeddedId = buildVersionId(
+            readBundleMetadata().version,
+            readBundleMetadata().versionCode
+        )
+        return embeddedId?.equals(VERSION_DEBUG, ignoreCase = true) == true
+    }
+
+    private fun applyPendingUpdatesUnlocked(): Boolean {
+        // DEBUG is the native:run payload. Always extract it (extractLaravelBundleUnlocked)
+        // and do not apply a leftover pending OTA on top — otherwise developers
+        // never see the PHP they just shipped. Versioned builds still apply pending.
+        if (isDebugBundle()) {
+            Log.d(TAG, "🚧 DEBUG bundle: skipping pending OTA apply so local changes show")
+            return false
+        }
+
+        val laravelDir = File(appStorageDir, DIR_LARAVEL)
+
+        return applyPendingUpdate(laravelDir, File(laravelDir, OTA_MARKER))
+    }
+
+    /**
+     * A payload ships the whole Laravel .env, and it deliberately carries no
+     * app version: which shell this is belongs to the shell. The values are
+     * written back from bundle_meta.json so the running app reports the version
+     * it was installed as, and so the identity check keeps matching.
+     *
+     * Dotenv is immutable — the first definition of a key wins — so existing
+     * lines are removed rather than appended after.
+     *
+     * When the metadata cannot be read, nothing is written: the app then has no
+     * version, which reads as DEBUG and re-extracts the bundle every launch. A
+     * slow boot beats running a payload we cannot identify.
+     */
+    private fun restoreShellVersion(laravelDir: File) {
+        val meta = readBundleMetadata()
+        val version = meta.version
+
+        if (version.isNullOrEmpty()) {
+            Log.w(TAG, "⚠️ No bundle metadata — leaving the payload without a version")
+            return
+        }
+
+        val envFile = File(laravelDir, ENV_FILE)
+
+        if (!envFile.isFile) {
+            Log.w(TAG, "⚠️ No .env in the payload to restore the version into")
+            return
+        }
+
+        val kept = envFile.readLines().filterNot {
+            it.startsWith("NATIVEPHP_APP_VERSION=") ||
+                it.startsWith("NATIVEPHP_APP_VERSION_CODE=") ||
+                it.startsWith("NATIVEPHP_OTA_SHELL_BUILT_AT=") ||
+                it.startsWith("NATIVEPHP_OTA_SHELL_COMMIT=")
+        }
+
+        val restored = mutableListOf(
+            "NATIVEPHP_APP_VERSION=\"$version\"",
+            "NATIVEPHP_APP_VERSION_CODE=${meta.versionCode ?: "0"}",
+        )
+
+        // The shell's baseline travels with the shell, not with the payload.
+        meta.shellBuiltAt?.takeIf { it.isNotEmpty() }?.let {
+            restored += "NATIVEPHP_OTA_SHELL_BUILT_AT=\"$it\""
+        }
+        meta.shellCommit?.takeIf { it.isNotEmpty() }?.let {
+            restored += "NATIVEPHP_OTA_SHELL_COMMIT=\"$it\""
+        }
+
+        envFile.writeText((kept + restored).joinToString("\n", postfix = "\n"))
+
+        Log.d(TAG, "📝 Restored shell version ${version}b${meta.versionCode ?: "0"} into the payload's .env")
+    }
+
+    /**
+     * What the server said about the release, written beside the download by the
+     * OTA client and moved in here so the installed payload carries the checksum
+     * and publish time alongside what the build already described.
+     */
+    private fun mergePendingManifest(laravelDir: File) {
+        val pendingManifest = File(File(appStorageDir, DIR_UPDATES), PENDING_MANIFEST)
+
+        if (!pendingManifest.isFile) {
+            return
+        }
+
+        try {
+            val server = org.json.JSONObject(pendingManifest.readText())
+            val manifestFile = File(laravelDir, OTA_MANIFEST)
+            val merged = if (manifestFile.isFile) {
+                org.json.JSONObject(manifestFile.readText())
+            } else {
+                org.json.JSONObject()
+            }
+
+            for (key in server.keys()) {
+                if (key != "download_url") {
+                    merged.put(key, server.get(key))
+                }
+            }
+
+            manifestFile.writeText(merged.toString(2))
+            Log.d(TAG, "📌 Recorded release ${merged.optString("release_uuid", "?")} from the server's answer")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not merge the server's release manifest: ${e.message}")
+        } finally {
+            pendingManifest.delete()
+        }
+    }
+
+    /**
+     * Compiled Blade views and the framework cache live under persisted_data,
+     * which deliberately survives the laravel directory being replaced — that
+     * is where the database lives. They describe the code that was there
+     * before, though, so after any extraction they are stale: a template the
+     * update changed keeps rendering from its old compiled copy.
+     *
+     * Cleared from Kotlin rather than through `artisan view:clear`, because
+     * extraction happens before PHP is available.
+     */
+    private fun clearCompiledCaches() {
+        val stale = listOf(
+            File(appStorageDir, DIR_VIEWS),
+            File(appStorageDir, "$DIR_CACHE/data"),
+            File(File(appStorageDir, DIR_LARAVEL), "bootstrap/cache"),
+        )
+
+        var removed = 0
+        for (dir in stale) {
+            dir.listFiles()?.forEach { entry ->
+                if (entry.isFile && entry.delete()) {
+                    removed++
+                } else if (entry.isDirectory) {
+                    entry.deleteRecursively()
+                    removed++
+                }
+            }
+        }
+
+        Log.d(TAG, "🧹 Cleared $removed compiled cache entries after extraction")
+    }
+
+    /**
+     * Apply a payload the OTA client queued at app_storage/updates/pending.zip,
+     * on top of the shell this boot already established. Returns true when one
+     * was applied, so callers can run the post-extraction artisan commands.
+     *
+     * Exactly one name is read. Scanning the directory for any zip would let a
+     * leftover download — fetched for a shell that has since been replaced —
+     * install itself over the app.
+     */
+    private fun applyPendingUpdate(laravelDir: File, otaMarkerFile: File): Boolean {
+        val pendingZip = File(File(appStorageDir, DIR_UPDATES), PENDING_ZIP)
+
+        if (!pendingZip.isFile) {
+            return false
+        }
+
+        Log.d(TAG, "📦 Applying queued OTA payload (${pendingZip.length()} bytes)")
+
+        val envFile = File(laravelDir, ENV_FILE)
+        val stashFile = File(File(appStorageDir, DIR_UPDATES), ".env.stash")
+        var hadEnv = false
+
+        return try {
+            // The environment belongs to the installed app, not to the payload.
+            if (envFile.isFile) {
+                envFile.copyTo(stashFile, overwrite = true)
+                hadEnv = true
+                Log.d(TAG, "📦 Stashed existing .env before the pending update")
+            }
+
+            // The payload replaces the app tree; persisted_data is a sibling
+            // and is never touched, so databases and storage survive.
+            if (laravelDir.exists()) {
+                Runtime.getRuntime().exec(arrayOf("rm", "-rf", laravelDir.absolutePath)).waitFor()
+            }
+            laravelDir.mkdirs()
+
+            pendingZip.inputStream().use { unzip(it, laravelDir) }
+
+            if (hadEnv && stashFile.isFile) {
+                stashFile.copyTo(envFile, overwrite = true)
+                stashFile.delete()
+                Log.d(TAG, "📦 Restored stashed .env over extracted payload")
+            }
+
+            // The payload says which release it is; record it so the client can
+            // report what the device holds without unpacking anything.
+            restoreShellVersion(laravelDir)
+            mergePendingManifest(laravelDir)
+
+            val release = readReleaseUuid(File(laravelDir, OTA_MANIFEST))
+            if (release != null) {
+                otaMarkerFile.writeText(release)
+            }
+
+            pendingZip.delete()
+            clearCompiledCaches()
+            Log.d(TAG, "✅ OTA payload applied${release?.let { " (release $it)" } ?: ""}")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to apply queued OTA payload", e)
+            stashFile.delete()
+            // Leave the zip alone: a half-written app is worse than a retry, and
+            // the next boot re-extracts the bundled shell if this one is broken.
+            false
+        }
+    }
+
+    /** release_uuid out of the payload's ota.json, or null when it carries none. */
+    private fun readReleaseUuid(manifest: File): String? {
+        if (!manifest.isFile) {
+            return null
+        }
+
+        return try {
+            val uuid = org.json.JSONObject(manifest.readText()).optString("release_uuid")
+            uuid.ifEmpty { null }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read ${manifest.name}: ${e.message}")
+            null
+        }
+    }
+
+    private fun unzip(inputStream: java.io.InputStream, destinationDir: File) {
+        val buffer = ByteArray(65536)  // 64KB buffer
+        val zis = ZipInputStream(BufferedInputStream(inputStream))
+
+        var ze: ZipEntry? = zis.nextEntry
+        while (ze != null) {
+            // Skip storage directory - we use persisted_data/storage instead
+            if (ze.name.startsWith("storage/") || ze.name == "storage") {
+                Log.d(TAG, "⏭️ Skipping storage directory from bundle: ${ze.name}")
+                zis.closeEntry()
+                ze = zis.nextEntry
+                continue
+            }
+
+            val file = File(destinationDir, ze.name)
+
+            if (ze.isDirectory) {
+                file.mkdirs()
+            } else {
+                // Stream directly to disk instead of buffering in memory
+                file.parentFile?.mkdirs()
+                FileOutputStream(file).use { fos ->
+                    var count: Int
+                    while (zis.read(buffer).also { count = it } != -1) {
+                        fos.write(buffer, 0, count)
+                    }
+                }
+            }
+            zis.closeEntry()
+            ze = zis.nextEntry
+        }
+        zis.close()
+    }
+
+    private fun copyAssetToInternalStorage(assetName: String, targetFileName: String, forceUpdate: Boolean = false): File {
+        val outFile = File(context.filesDir, targetFileName)
+
+        if (!outFile.exists()) {
+            // File doesn't exist, copy it
+            Log.d(TAG, "📋 Copying asset $assetName to ${outFile.absolutePath} (new file)")
+            copyAssetFile(assetName, outFile)
+        } else if (forceUpdate) {
+            // Forced refresh (DEBUG build, or the Laravel bundle was just
+            // re-extracted for an app update), copy without checksum verification
+            Log.d(TAG, "📋 Force updating asset $assetName")
+            copyAssetFile(assetName, outFile)
+        } else {
+            // File exists and no forced refresh — trust it. This asset only changes
+            // with an app update, which re-extracts the bundle and forces a refresh
+            // above. Avoids MD5-hashing two ~200KB streams on every cold boot.
+            Log.d(TAG, "📋 Asset $assetName present — skipping (no forced refresh)")
+        }
+
+        return outFile
+    }
+
+    @Synchronized
+    private fun copyAssetFile(assetName: String, outFile: File) {
+        try {
+            context.assets.open(assetName).use { input ->
+                FileOutputStream(outFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Log.d(TAG, "✅ Successfully copied $assetName")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to copy asset $assetName", e)
+            throw e
+        }
+    }
+
+    private fun runBaseArtisanCommands() {
+        if (baseArtisanRanThisProcess) {
+            Log.d(TAG, "⚡ Base artisan already ran in this process — skipping (classic embed can't re-init after persistent shutdown)")
+            return
+        }
+        baseArtisanRanThisProcess = true
+
+        val dbFile = File(appStorageDir, "persisted_data/database/database.sqlite")
+        if (!dbFile.exists()) {
+            Log.d(TAG, "📄 Creating empty SQLite file: ${dbFile.absolutePath}")
+            dbFile.createNewFile()
+        } else {
+            Log.d(TAG, "✅ SQLite file already exists: ${dbFile.absolutePath}")
+        }
+
+        File(appStorageDir, "persisted_data/storage/app/public")
+        phpBridge.runArtisanCommand("optimize:clear")
+        phpBridge.runArtisanCommand("storage:unlink")
+        phpBridge.runArtisanCommand("storage:link")
+        phpBridge.runArtisanCommand("migrate --force")
+
+        // Cache the Laravel bootstrap so every subsequent cold boot skips config
+        // parsing, event discovery, and Blade compilation. Built HERE — once per app
+        // update, with the device's real paths — rather than at build time on the host
+        // (where the cached paths would be wrong, which is why we optimize:clear above
+        // first). This is the biggest Laravel-side cold-start lever; view:cache in
+        // particular precompiles every Blade view so the first page render doesn't have
+        // to. `route:cache` is intentionally omitted — NativePHP registers internal
+        // closure routes (e.g. /_native/api/events) that can't be serialized.
+        phpBridge.runArtisanCommand("config:cache")
+        phpBridge.runArtisanCommand("event:cache")
+        phpBridge.runArtisanCommand("view:cache")
+    }
+
+    private fun setupDirectories() {
+        try {
+            // Create directories with permissions as needed
+            createDirectory(DIR_FRAMEWORK, withPermissions = true)
+            createDirectory(DIR_VIEWS)
+            createDirectory(DIR_SESSIONS, withPermissions = true)
+            createDirectory(DIR_CACHE)
+            createDirectory(DIR_LOGS)
+            createDirectory(DIR_APP)
+            createDirectory(DIR_PUBLIC)
+            createDirectory(DIR_DATABASE)
+
+            // Set permissions on parent storage directory (owner-only)
+            File(appStorageDir, DIR_STORAGE).setWritable(true, true)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create directories", e)
+            throw e
+        }
+    }
+
+    private fun setupEnvironment(forceCertRefresh: Boolean = false) {
+        try {
+            val appKeys = AppKeyStore(context).load(File(appStorageDir, LEGACY_APP_KEY_FILE)) {
+                laravelSupportsPreviousKeys()
+            }
+
+            if (appKeys.migrated) {
+                // A config cache built before the migration holds the legacy
+                // key in plain text and would keep it in use. Without the
+                // cache Laravel reads the keys from the environment set below.
+                File(appStorageDir, "$DIR_LARAVEL/bootstrap/cache/config.php").delete()
+            }
+
+            // Hand the signer the current app key so it can sign device events
+            // this shell posts to /_native/api/events (see NativeActionCoordinator).
+            com.nativephp.mobile.security.NativeEventSignature.configure(appKeys.keys.current)
+
+            // Set all environment variables in batches for better performance
+            setEnvironmentVariables(
+                "APP_KEY" to appKeys.keys.current,
+                // Always set, so a value in the bundled .env can never apply.
+                "APP_PREVIOUS_KEYS" to appKeys.keys.previous.joinToString(","),
+                // Core Laravel paths
+                "DOCUMENT_ROOT" to "${appStorageDir.absolutePath}/laravel",
+                "LARAVEL_BASE_PATH" to "${appStorageDir.absolutePath}/laravel",
+                "COMPOSER_VENDOR_DIR" to "${appStorageDir.absolutePath}/laravel/vendor",
+                "COMPOSER_AUTOLOADER_PATH" to "${appStorageDir.absolutePath}/laravel/vendor/autoload.php",
+                // Laravel storage paths
+                "LARAVEL_STORAGE_PATH" to "${appStorageDir.absolutePath}/persisted_data/storage",
+                "LARAVEL_BOOTSTRAP_PATH" to "${appStorageDir.absolutePath}/laravel/bootstrap",
+                "VIEW_COMPILED_PATH" to "${appStorageDir.absolutePath}/persisted_data/storage/framework/views",
+                "CACHE_PATH" to "${appStorageDir.absolutePath}/persisted_data/storage/framework/cache",
+                // Tell the embedded PHP to enforce signatures on device events.
+                // This shell signs every event it posts, so PHP can reject a
+                // forged one. Set only here, on the on-device shell boot — it
+                // never reaches a shared PHP bootstrap or the dev-machine PHP
+                // under Jump, where events stay unsigned and enforcement is off.
+                "NATIVEPHP_EVENTS_SIGNED" to "1"
+            )
+
+            setEnvironmentVariables(
+                // Laravel environment settings
+                "APP_URL" to "http://127.0.0.1",
+                "ASSET_URL" to "http://127.0.0.1/_assets",
+                "DB_CONNECTION" to "sqlite",
+                "DB_DATABASE" to "${appStorageDir.absolutePath}/persisted_data/database/database.sqlite",
+                "CACHE_DRIVER" to "file",
+                "CACHE_STORE" to "file",
+                "QUEUE_CONNECTION" to "database",
+                // Set before any artisan runs, as on iOS. Otherwise the
+                // config:cache in runBaseArtisanCommands records running =>
+                // false and routes/mobile.php never loads on device.
+                "NATIVEPHP_RUNNING" to "true",
+                "NATIVEPHP_PLATFORM" to "android",
+                "NATIVEPHP_TEMPDIR" to context.cacheDir.absolutePath
+            )
+
+            setEnvironmentVariables(
+                // Cookie settings
+                "COOKIE_PATH" to "/",
+                "COOKIE_DOMAIN" to "127.0.0.1",
+                "COOKIE_SECURE" to "false",
+                "COOKIE_HTTP_ONLY" to "true",
+                // Session settings
+                "SESSION_DRIVER" to "file",
+                "SESSION_DOMAIN" to "127.0.0.1",
+                "SESSION_SECURE_COOKIE" to "false",
+                "SESSION_HTTP_ONLY" to "true",
+                "SESSION_SAME_SITE" to "lax"
+            )
+
+            setEnvironmentVariables(
+                // PHP paths and settings
+                "PHP_INI_SCAN_DIR" to appStorageDir.absolutePath,
+                "CA_CERT_DIR" to context.filesDir.absolutePath,
+                "PHPRC" to context.filesDir.absolutePath,
+                // PHP/Server environment
+                "REMOTE_ADDR" to "127.0.0.1",
+                "SERVER_NAME" to "127.0.0.1",
+                "SERVER_PORT" to "80",
+                "SERVER_PROTOCOL" to "HTTP/1.1",
+                "REQUEST_SCHEME" to "http"
+            )
+
+            Log.d(TAG, "✅ Environment variables configured")
+
+            val phpSessionDir = File(appStorageDir, DIR_PHP_SESSIONS).apply {
+                mkdirs()
+                setReadable(true, true)
+                setWritable(true, true)
+                setExecutable(true, true)
+            }
+            setEnvironmentVariable("SESSION_SAVE_PATH", phpSessionDir.absolutePath)
+            Log.d(TAG, "PHP session path set to: ${phpSessionDir.absolutePath}")
+
+            try {
+                // Check if we're in DEBUG mode to force certificate refresh
+                val isDebugMode = try {
+                    val versionFile = File(appStorageDir, "$DIR_LARAVEL/$VERSION_FILE")
+                    versionFile.exists() && versionFile.readText().trim() == VERSION_DEBUG
+                } catch (e: Exception) {
+                    false
+                }
+
+                Log.d(TAG, "🔍 Certificate copy - DEBUG mode: $isDebugMode")
+                // Force a refresh in DEBUG, or when the Laravel bundle was just
+                // re-extracted (app update). Otherwise trust the existing copy —
+                // see copyAssetToInternalStorage — so we don't MD5 two ~200KB
+                // streams on every cold boot.
+                copyAssetToInternalStorage(CACERT_FILE, CACERT_FILE, forceUpdate = isDebugMode || forceCertRefresh)
+
+                // This php.ini (found through PHPRC) is where settings
+                // actually apply: php_embed_init() replaces the embed
+                // module's ini_entries with its own list. The upload limits
+                // match the bridge's 16MB capture cap; PHP's defaults (8M
+                // post, 2M per file) would reject uploads the bridge carries.
+                //
+                // memory_limit: 128M for every context. The persistent
+                // runtime, which runs the native session, raises its own to
+                // 512M when it boots (see raise_persistent_memory_limit in
+                // php_bridge.c).
+                val phpIni = """
+curl.cainfo="${context.filesDir.absolutePath}/$CACERT_FILE"
+openssl.cafile="${context.filesDir.absolutePath}/$CACERT_FILE"
+post_max_size=16M
+upload_max_filesize=16M
+memory_limit=128M
+"""
+                File(context.filesDir, PHP_INI_FILE).writeText(phpIni)
+                Log.d(TAG, "✅ PHP ini configured with certificate path")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to copy or set CURL_CA_BUNDLE", e)
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup environment", e)
+            throw e
+        }
+    }
+
+    // APP_PREVIOUS_KEYS arrived in Laravel 11. On anything older a rotated
+    // key would leave existing encrypted data unreadable.
+    private fun laravelSupportsPreviousKeys(): Boolean {
+        val encrypter = File(
+            appStorageDir,
+            "$DIR_LARAVEL/vendor/laravel/framework/src/Illuminate/Encryption/Encrypter.php"
+        )
+        return try {
+            encrypter.exists() && encrypter.readText().contains("previousKeys")
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun setEnvironmentVariable(name: String, value: String) {
+        try {
+            val result = nativeSetEnv(name, value, 1)
+            if (result != 0) {
+                throw RuntimeException("Failed to set environment variable: $name")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set environment variable: $name", e)
+            throw e
+        }
+    }
+
+    /**
+     * Set multiple environment variables at once
+     * More efficient than individual calls due to reduced JNI overhead
+     */
+    private fun setEnvironmentVariables(vararg pairs: Pair<String, String>) {
+        for ((name, value) in pairs) {
+            setEnvironmentVariable(name, value)
+        }
+    }
+
+    private fun createDirectory(path: String, withPermissions: Boolean = false) {
+        val dir = File(appStorageDir, path)
+
+        // Skip if already exists
+        if (dir.exists()) return
+
+        dir.mkdirs()
+
+        // Set owner-only permissions if requested
+        if (withPermissions) {
+            dir.setReadable(true, true)
+            dir.setWritable(true, true)
+            dir.setExecutable(true, true)
+        }
+    }
+
+    /**
+     * Lightweight initialization for background execution (WorkManager).
+     * Sets environment variables and ensures directories exist.
+     * Skips bundle extraction and artisan commands — those are done at install time.
+     */
+    fun initializeForBackground() {
+        try {
+            // Same process-reuse guard as initialize(): never re-extract
+            // under a live persistent runtime (poisons its stat caches).
+            if (phpBridge.isPersistentMode()) {
+                Log.d(TAG, "⚡ Persistent runtime alive — skipping background extraction (process reuse)")
+                return
+            }
+
+            setupDirectories()
+            // Run extraction too. If MainActivity already extracted, the isUpToDate
+            // check returns false (no work). If MainActivity is mid-extract, the
+            // lock blocks us here until it finishes. If we arrived first
+            // (WorkManager cold start after an app update), we do the extraction
+            // ourselves before the ephemeral runtime touches vendor/.
+            //
+            // The lock spans the artisan commands as well, exactly as initialize()
+            // holds it: bootPersistentRuntime() takes the same lock, and a classic
+            // embed cycle running beside a persistent boot is what the extractionLock
+            // comment above describes. Releasing after extraction alone would let
+            // MainActivity boot straight into that overlap.
+            extractionLock.withLock {
+                val didExtract = extractLaravelBundleUnlocked()
+
+                setupEnvironment(didExtract)
+
+                if (didExtract) {
+                    Log.d(TAG, "📦 Running post-extraction artisan commands (background path)...")
+                    runBaseArtisanCommands()
+                }
+            }
+            Log.d(TAG, "Background environment initialized")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing background environment", e)
+            throw RuntimeException("Failed to initialize background environment", e)
+        }
+    }
+
+    fun cleanup() {
+        try {
+            phpBridge.shutdown()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during cleanup", e)
+        }
+    }
+}

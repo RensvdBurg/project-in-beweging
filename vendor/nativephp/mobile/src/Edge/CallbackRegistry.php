@@ -1,0 +1,350 @@
+<?php
+
+namespace Native\Mobile\Edge;
+
+class CallbackRegistry
+{
+    /**
+     * Scope salt folded into every derived id — empty for a screen's
+     * own registry. Child-component registries pass their identity key
+     * ('user-card|key:a'), so identical expressions in sibling children
+     * ('bump', 'save') derive DISTINCT ids and dispatch resolves
+     * ownership unambiguously. Identity keys are stable across renders
+     * and processes (explicit `key` attr, else tag + occurrence index),
+     * so scoped ids are exactly as deterministic as unscoped ones.
+     */
+    protected string $scope = '';
+
+    protected array $map = [];
+
+    protected array $expressionMap = [];
+
+    protected array $navigationConfigs = [];
+
+    /**
+     * Optional `kind` tag per callback id. Used by `NativeComponent::dispatch`
+     * to special-case callbacks whose return value must flow back through
+     * the publish cycle (currently just `'search_query'` — the
+     * `onSearchQuery($q): array` handler). Default callbacks have no kind
+     * and are dispatched fire-and-forget.
+     *
+     * @var array<int, string>
+     */
+    protected array $kindMap = [];
+
+    /**
+     * IDs are content-addressed: a pure function of the expression string
+     * (fnv1a32). Same expression always yields the same id — in any
+     * process, any request, any registry instance. That removes every
+     * positional-determinism assumption from the protocol: no counter,
+     * no render-order dependence, nothing to replay to rebuild ids.
+     *
+     * Distinct expressions across components get hash-distinct ids, so
+     * the old cross-component collision hazard (two counters both
+     * handing out id 5) can't occur. Two components sharing an
+     * expression share an id — semantically safe: same expression means
+     * same method + literal args.
+     */
+    public function __construct(string $scope = '')
+    {
+        $this->scope = $scope;
+    }
+
+    /**
+     * This registry's scope — parents prepend it when scoping their
+     * children, so nested children chain ('cards|key:a>badge|i:0') and
+     * the same tag at the same index under DIFFERENT parents still
+     * derives distinct ids.
+     */
+    public function scope(): string
+    {
+        return $this->scope;
+    }
+
+    public function register(string $expression, ?string $kind = null): int
+    {
+        if (isset($this->expressionMap[$expression])) {
+            $id = $this->expressionMap[$expression];
+        } else {
+            $id = $this->deriveId($expression);
+            $this->expressionMap[$expression] = $id;
+            $this->map[$id] = self::parse($expression);
+        }
+
+        if ($kind !== null) {
+            $this->kindMap[$id] = $kind;
+        }
+
+        return $id;
+    }
+
+    /**
+     * Hash an expression to a callback id.
+     *
+     * Masked to 31 bits: the Kotlin side reads callback ids as signed
+     * Int (`getInt("on_press")`, `sendPressEvent(callbackId: Int, …)`),
+     * so the sign bit must stay clear or full-u32 ids wrap negative on
+     * the round trip and `resolve()` misses. fnv1a32 never returns 0,
+     * but the mask can produce 0 — nudge to 1 (0 is the "no callback"
+     * sentinel on the native side).
+     *
+     * Cross-expression hash collision (different expression, same id —
+     * ~1 in 2^31): rehash with a salt suffix until free. The result is
+     * deterministic given insertion order, and registration follows
+     * tree order, so replaying the same render reproduces identical
+     * ids.
+     */
+    protected function deriveId(string $expression): int
+    {
+        $input = $this->scope === '' ? $expression : $this->scope."\x1F".$expression;
+
+        $id = Element::fnv1a32($input) & 0x7FFFFFFF;
+
+        if ($id === 0) {
+            $id = 1;
+        }
+
+        for ($salt = 1; isset($this->map[$id]); $salt++) {
+            $id = Element::fnv1a32($input."\x00".$salt) & 0x7FFFFFFF;
+
+            if ($id === 0) {
+                $id = 1;
+            }
+        }
+
+        return $id;
+    }
+
+    public function resolve(int $id): ?array
+    {
+        return $this->map[$id] ?? null;
+    }
+
+    public function kind(int $id): ?string
+    {
+        return $this->kindMap[$id] ?? null;
+    }
+
+    /** Look up a callback ID by its expression string. */
+    public function lookup(string $expression): ?int
+    {
+        return $this->expressionMap[$expression] ?? null;
+    }
+
+    /**
+     * All registered expressions, keyed by expression → id. Used by the
+     * testing harness to resolve a method name to its callback id.
+     *
+     * @return array<string, int>
+     */
+    public function expressions(): array
+    {
+        return $this->expressionMap;
+    }
+
+    /**
+     * Soft reset — keep ID mappings stable across frames.
+     * Same expression always gets the same ID.
+     */
+    public function reset(): void
+    {
+        // Keep expressionMap and map intact for stable IDs.
+    }
+
+    /**
+     * Store a navigation config and return a content-addressed key.
+     * Same config always produces the same key for stable callback IDs.
+     */
+    public function registerNavigation(array $config): string
+    {
+        $key = 'n'.substr(md5(json_encode($config)), 0, 8);
+        $this->navigationConfigs[$key] = $config;
+
+        return $key;
+    }
+
+    public function resolveNavigation(string $key): ?array
+    {
+        return $this->navigationConfigs[$key] ?? null;
+    }
+
+    /**
+     * All stored navigation configs, keyed by content-addressed key —
+     * the introspection counterpart to expressions(). Re-registering a
+     * config recomputes the identical key, so consumers (tooling, the
+     * testing harness) can enumerate exactly what a render registered.
+     *
+     * @return array<string, array>
+     */
+    public function navigations(): array
+    {
+        return $this->navigationConfigs;
+    }
+
+    /**
+     * Parse a `method('arg', ...)` expression into method + literal args.
+     * Public because NativeComponent::emit() reuses it for tag-level
+     * `@event="method(...)"` bindings on child-component tags.
+     */
+    public static function parse(string $expression): array
+    {
+        $expression = trim($expression);
+
+        if (str_starts_with($expression, '$')) {
+            return self::parseAssignment($expression);
+        }
+
+        if (! str_contains($expression, '(')) {
+            return ['method' => $expression, 'args' => []];
+        }
+
+        $parenPos = strpos($expression, '(');
+        $method = substr($expression, 0, $parenPos);
+        $argsString = trim(substr($expression, $parenPos + 1, -1));
+
+        if ($argsString === '') {
+            return ['method' => $method, 'args' => []];
+        }
+
+        $json = '['.self::toJsonArgs($argsString).']';
+        $args = json_decode($json, true);
+
+        if (! is_array($args)) {
+            // Still `[]`, because callers spread this (NativeComponent.php:3316, :3371)
+            // and a null would be a TypeError — changing the contract belongs in its own
+            // change, not a bug fix. But it is no longer *silent*: previously a handler
+            // was invoked with no arguments and nothing said so anywhere.
+            error_log("CallbackRegistry: could not parse arguments for '{$expression}' — calling {$method}() with none.");
+
+            return ['method' => $method, 'args' => []];
+        }
+
+        return ['method' => $method, 'args' => $args];
+    }
+
+    /** The method an assignment handler runs: `$prop = <literal>`. */
+    public const ASSIGN = '__assignProperty';
+
+    /** The method a toggle handler runs: `$prop = !$prop`. */
+    public const TOGGLE = '__toggleProperty';
+
+    /**
+     * Parse a handler that sets a property instead of calling a method:
+     *
+     *     $showSheet = true          → __assignProperty('showSheet', true)
+     *     $tab = 'settings'          → __assignProperty('tab', 'settings')
+     *     $count = 0                 → __assignProperty('count', 0)
+     *     $open = !$open             → __toggleProperty('open')
+     *
+     * The value must be a literal: true, false, null, a number or a quoted
+     * string. Nothing is evaluated. Anything else comes back with the
+     * expression itself as the method name, which no component has, so
+     * dispatch reports it.
+     */
+    private static function parseAssignment(string $expression): array
+    {
+        $invalid = ['method' => $expression, 'args' => []];
+
+        if (preg_match('/^\$([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)\s*(.+)$/s', $expression, $m) !== 1) {
+            return $invalid;
+        }
+
+        [, $property, $value] = $m;
+        $value = trim($value);
+
+        if (preg_match('/^!\s*\$([A-Za-z_][A-Za-z0-9_]*)$/', $value, $toggle) === 1) {
+            return $toggle[1] === $property
+                ? ['method' => self::TOGGLE, 'args' => [$property]]
+                : $invalid;
+        }
+
+        $lower = strtolower($value);
+
+        if (in_array($lower, ['true', 'false', 'null'], true)) {
+            return ['method' => self::ASSIGN, 'args' => [$property, json_decode($lower)]];
+        }
+
+        if (is_numeric($value) && preg_match('/^-?(0|[1-9]\d*)(\.\d+)?$/', $value) === 1) {
+            return ['method' => self::ASSIGN, 'args' => [$property, json_decode($value)]];
+        }
+
+        $quote = $value[0] ?? '';
+
+        if (($quote === "'" || $quote === '"') && strlen($value) >= 2 && $value[-1] === $quote) {
+            $decoded = json_decode('['.self::toJsonArgs($value).']', true);
+
+            if (is_array($decoded) && count($decoded) === 1 && is_string($decoded[0])) {
+                return ['method' => self::ASSIGN, 'args' => [$property, $decoded[0]]];
+            }
+        }
+
+        return $invalid;
+    }
+
+    /**
+     * Convert PHP-style single-quoted argument literals to JSON.
+     *
+     * The previous `str_replace("'", '"')` rewrote every apostrophe in the string,
+     * whatever its role, which produced three distinct silent failures:
+     *
+     *   save("don't")        → args dropped entirely (invalid JSON)
+     *   setName('O'Brien')   → args dropped entirely
+     *   rename('it\'s fine') → args CORRUPTED to `it"s fine` — no error, wrong data
+     *
+     * The third is the dangerous one: the handler runs, with a value the author never
+     * wrote. So the conversion now tracks which quote actually opened the current
+     * string and leaves apostrophes inside double-quoted strings alone.
+     */
+    private static function toJsonArgs(string $args): string
+    {
+        $out = '';
+        $quote = null;
+        $length = strlen($args);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $args[$i];
+
+            if ($quote !== null && $char === '\\' && $i + 1 < $length) {
+                $next = $args[$i + 1];
+                // \' is only an escape inside a single-quoted literal, and JSON has no
+                // such escape — emit the bare apostrophe.
+                if ($quote === "'" && $next === "'") {
+                    $out .= "'";
+                } else {
+                    $out .= $char.$next;
+                }
+                $i++;
+
+                continue;
+            }
+
+            if ($quote === null && ($char === "'" || $char === '"')) {
+                $quote = $char;
+                $out .= '"';
+
+                continue;
+            }
+
+            if ($char === $quote) {
+                $quote = null;
+                $out .= '"';
+
+                continue;
+            }
+
+            // A double quote inside a single-quoted literal is data, not a delimiter, so
+            // it has to be escaped rather than rewritten. (The mirror case needs no
+            // branch: a double quote inside a double-quoted string closes it above,
+            // which is what PHP's own tokenizer does with an unescaped one.)
+            if ($quote === "'" && $char === '"') {
+                $out .= '\\"';
+
+                continue;
+            }
+
+            $out .= $char;
+        }
+
+        return $out;
+    }
+}

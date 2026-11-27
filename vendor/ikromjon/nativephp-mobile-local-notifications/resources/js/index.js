@@ -1,0 +1,175 @@
+const baseUrl = '/_native/api/call';
+
+/**
+ * Call a native bridge function.
+ * Matches the official NativePHP BridgeCall contract: includes CSRF token,
+ * throws on error, and returns the unwrapped `data` property.
+ *
+ * @param {string} method - Bridge function name (e.g. 'LocalNotifications.Schedule')
+ * @param {Object} params - Parameters to pass to the bridge function
+ * @returns {Promise<Object>} The response data from the native bridge
+ */
+async function bridgeCall(method, params = {}) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!csrfToken) {
+        console.warn('[LocalNotifications] CSRF token not found — requests may be rejected');
+    }
+
+    const response = await fetch(baseUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken || '',
+        },
+        body: JSON.stringify({ method, params }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Bridge call failed: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+
+    if (result.status === 'error') {
+        throw new Error(result.message || 'Native call failed');
+    }
+
+    return result.data;
+}
+
+// ---------------------------------------------------------------------------
+// Bridge Functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Schedule a local notification.
+ *
+ * @param {Object} options
+ * @param {string} options.id - Unique identifier
+ * @param {string} options.title - Notification title
+ * @param {string} options.body - Notification body text
+ * @param {number} [options.delay] - Delay in seconds from now
+ * @param {number} [options.at] - Unix timestamp to fire at
+ * @param {string} [options.repeat] - Repeat interval: 'minute', 'hourly', 'daily', 'weekly', 'monthly', 'yearly'
+ * @param {number} [options.repeatIntervalSeconds] - Custom repeat interval in seconds (min 60)
+ * @param {number[]} [options.repeatDays] - Days of week (1=Mon..7=Sun). Requires `at`
+ * @param {number} [options.repeatCount] - Limit repetitions (min 1)
+ * @param {boolean} [options.sound=true] - Play sound
+ * @param {string} [options.soundName] - Custom sound filename (e.g. "alert.wav"). Overrides sound boolean.
+ * @param {number} [options.badge] - Badge number on app icon
+ * @param {Object} [options.data] - Custom data payload
+ * @param {string} [options.subtitle] - Subtitle text
+ * @param {string} [options.image] - Image URL (http/https only)
+ * @param {string} [options.bigText] - Expanded body text
+ * @param {Array<{id: string, title: string, destructive?: boolean, input?: boolean, snooze?: number}>} [options.actions] - Action buttons (max 3); snooze reschedules natively after N seconds
+ * @param {string} [options.priority] - Notification priority: 'low', 'default', 'high', 'urgent'. Omitted = legacy high-importance behavior
+ * @param {boolean} [options.silent] - Deliver without sound or vibration (on Android also without heads-up banner)
+ * @returns {Promise<{success: boolean, id?: string, error?: string}>}
+ */
+export async function schedule(options = {}) {
+    return bridgeCall('LocalNotifications.Schedule', options);
+}
+
+/**
+ * Cancel a scheduled notification by its identifier.
+ *
+ * @param {string} id - The notification identifier to cancel
+ * @returns {Promise<{success: boolean, id?: string, error?: string}>}
+ */
+export async function cancel(id) {
+    return bridgeCall('LocalNotifications.Cancel', { id });
+}
+
+/**
+ * Cancel all scheduled notifications.
+ *
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export async function cancelAll() {
+    return bridgeCall('LocalNotifications.CancelAll');
+}
+
+/**
+ * Get all pending scheduled notifications.
+ *
+ * @returns {Promise<{success: boolean, notifications?: string, count?: number, error?: string}>}
+ */
+export async function getPending() {
+    return bridgeCall('LocalNotifications.GetPending');
+}
+
+/**
+ * Request notification permission (Android 13+, iOS).
+ *
+ * @param {Object} [options]
+ * @param {boolean} [options.critical] - Also request iOS critical-alert authorization
+ *     (requires the critical-alerts entitlement; ignored on Android). Needed for
+ *     priority 'urgent' to deliver as a critical alert.
+ * @returns {Promise<{granted: boolean, status?: string, error?: string}>}
+ */
+export async function requestPermission(options = {}) {
+    return bridgeCall('LocalNotifications.RequestPermission', options);
+}
+
+/**
+ * Check current notification permission status.
+ *
+ * @returns {Promise<{status: string, error?: string}>}
+ */
+export async function checkPermission() {
+    return bridgeCall('LocalNotifications.CheckPermission');
+}
+
+/**
+ * Update an existing scheduled notification.
+ *
+ * @param {string} id - The notification identifier to update
+ * @param {Object} options - Properties to update (same as schedule, but id is separate)
+ * @param {string} [options.title] - Updated title
+ * @param {string} [options.body] - Updated body text
+ * @param {number} [options.delay] - New delay in seconds from now
+ * @param {number} [options.at] - New Unix timestamp to fire at
+ * @param {string} [options.repeat] - New repeat interval
+ * @param {number} [options.repeatIntervalSeconds] - New custom repeat interval
+ * @param {number[]} [options.repeatDays] - New days of week
+ * @param {number} [options.repeatCount] - New repetition limit
+ * @param {boolean} [options.sound] - Play sound
+ * @param {string} [options.soundName] - Custom sound filename (e.g. "alert.wav")
+ * @param {number} [options.badge] - Badge number
+ * @param {Object} [options.data] - Custom data payload
+ * @param {string} [options.subtitle] - Subtitle text
+ * @param {string} [options.image] - Image URL
+ * @param {string} [options.bigText] - Expanded body text
+ * @param {Array<{id: string, title: string, destructive?: boolean, input?: boolean, snooze?: number}>} [options.actions] - Action buttons
+ * @param {string} [options.priority] - Notification priority: 'low', 'default', 'high', 'urgent'. Omitted = legacy high-importance behavior
+ * @param {boolean} [options.silent] - Deliver without sound or vibration (on Android also without heads-up banner)
+ * @returns {Promise<{success: boolean, id?: string, error?: string}>}
+ */
+export async function update(id, options = {}) {
+    return bridgeCall('LocalNotifications.Update', { ...options, id });
+}
+
+// ---------------------------------------------------------------------------
+// Event Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Event name constants for use with the NativePHP `On()` listener.
+ *
+ * @example
+ * import { On } from '#nativephp';
+ * import { Events } from '../../vendor/ikromjon/nativephp-mobile-local-notifications/resources/js/index.js';
+ *
+ * On(Events.NotificationTapped, (payload) => {
+ *     console.log('Tapped:', payload.id);
+ * });
+ */
+export const Events = {
+    NotificationScheduled: 'Ikromjon\\LocalNotifications\\Events\\NotificationScheduled',
+    NotificationReceived: 'Ikromjon\\LocalNotifications\\Events\\NotificationReceived',
+    NotificationTapped: 'Ikromjon\\LocalNotifications\\Events\\NotificationTapped',
+    NotificationActionPressed: 'Ikromjon\\LocalNotifications\\Events\\NotificationActionPressed',
+    PermissionGranted: 'Ikromjon\\LocalNotifications\\Events\\PermissionGranted',
+    PermissionDenied: 'Ikromjon\\LocalNotifications\\Events\\PermissionDenied',
+    NotificationUpdated: 'Ikromjon\\LocalNotifications\\Events\\NotificationUpdated',
+};

@@ -1,0 +1,1534 @@
+<?php
+
+namespace Native\Mobile\Plugins\Compilers;
+
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Collection;
+use InvalidArgumentException;
+use Native\Mobile\Exceptions\PluginConflictException;
+use Native\Mobile\Plugins\LegacyFirebaseConfig;
+use Native\Mobile\Plugins\Plugin;
+use Native\Mobile\Plugins\PluginHookRunner;
+use Native\Mobile\Plugins\PluginRegistry;
+use Native\Mobile\Plugins\ProjectFileManager;
+use Native\Mobile\Plugins\SwiftSourceFilter;
+use Native\Mobile\Support\PlistDocument;
+use Native\Mobile\Support\Stub;
+use Native\Mobile\Support\SupportedLocales;
+
+class IOSPluginCompiler
+{
+    protected string $iosProjectPath;
+
+    protected string $generatedPath;
+
+    protected ?PluginHookRunner $hookRunner = null;
+
+    protected $output = null;
+
+    protected string $appId = '';
+
+    protected array $config = [];
+
+    public function __construct(
+        protected Filesystem $files,
+        protected PluginRegistry $registry,
+        protected string $basePath
+    ) {
+        $this->iosProjectPath = $basePath.'/ios';
+        $this->generatedPath = $this->iosProjectPath.'/NativePHP/Bridge/Plugins';
+    }
+
+    /**
+     * Set the output interface for logging
+     */
+    public function setOutput($output): self
+    {
+        $this->output = $output;
+
+        return $this;
+    }
+
+    /**
+     * Set the app ID for hooks context
+     */
+    public function setAppId(string $appId): self
+    {
+        $this->appId = $appId;
+
+        return $this;
+    }
+
+    /**
+     * Set the build config for hooks context
+     */
+    public function setConfig(array $config): self
+    {
+        $this->config = $config;
+
+        return $this;
+    }
+
+    /**
+     * Get the hook runner instance
+     */
+    protected function getHookRunner(): PluginHookRunner
+    {
+        if ($this->hookRunner === null) {
+            $this->hookRunner = new PluginHookRunner(
+                platform: 'ios',
+                buildPath: $this->iosProjectPath,
+                appId: $this->appId,
+                config: $this->config,
+                plugins: $this->registry->all(),
+                output: $this->output
+            );
+        }
+
+        return $this->hookRunner;
+    }
+
+    /**
+     * Compile all plugins for iOS
+     */
+    public function compile(): void
+    {
+        // Check for plugin conflicts before compiling
+        $conflicts = $this->registry->detectConflicts();
+        if (! empty($conflicts)) {
+            throw new PluginConflictException($conflicts);
+        }
+
+        // A plugin that declares `platforms: ["android"]` contributes nothing
+        // to an iOS build: no sources, no registrations, no Info.plist keys.
+        // Hooks still run for every plugin — a hook is the plugin's own code
+        // and gets to decide for itself.
+        $allPlugins = $this->registry->all()->filter(fn (Plugin $p) => $p->supportsPlatform('ios'));
+        $hookRunner = $this->getHookRunner();
+
+        // Run pre-compile hooks
+        $hookRunner->runPreCompileHooks();
+
+        // The generated plugin tree is fully derived from the installed
+        // plugins, so start from a clean slate. Copying over the previous
+        // output would leave stale files behind when a plugin deletes or
+        // renames a source file (or is removed entirely), producing
+        // duplicate-symbol build failures in Xcode.
+        $this->clean();
+        $this->files->ensureDirectoryExists($this->generatedPath);
+
+        // Copy app-owned files declared by plugins into the iOS project.
+        (new ProjectFileManager($this->files, $this->basePath, 'ios'))->sync($allPlugins);
+
+        // Back-compat: install GoogleService-Info.plist on behalf of a plugin
+        // that predates project_files. Does nothing once the plugin owns it.
+        $legacyFirebase = (new LegacyFirebaseConfig($this->files, $this->basePath))->sync($allPlugins, 'ios');
+
+        if ($legacyFirebase !== null) {
+            $this->warn(LegacyFirebaseConfig::deprecationNotice($legacyFirebase, 'ios'));
+        }
+
+        // Get plugins with iOS code (for copying files)
+        $pluginsWithCode = $allPlugins->filter(fn (Plugin $p) => $p->hasIosCode());
+
+        // Get plugins with iOS bridge functions (for registration)
+        $pluginsWithFunctions = $allPlugins->filter(function (Plugin $p) {
+            $functions = $p->getBridgeFunctions();
+            foreach ($functions as $function) {
+                if (! empty($function['ios'])) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+
+        // Get plugins with iOS info_plist entries or dependencies
+        $pluginsWithIosData = $allPlugins->filter(function (Plugin $p) {
+            return ! empty($p->getIosInfoPlist()) || ! empty($p->getIosDependencies());
+        });
+
+        // Check for plugins with iOS UI component renderers
+        $pluginsWithRenderers = $allPlugins->filter(function (Plugin $p) {
+            foreach ($p->getComponents() as $component) {
+                if (! empty($component['ios_renderer'])) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+
+        // Which languages the app ships is its own declaration, true whatever
+        // plugins are installed — including none, hence running before the
+        // early return below. Dropping a language has to un-ship it, and an
+        // early return would quietly leave the last build's languages on an
+        // app that no longer claims them.
+        $this->writeSupportedLocales($allPlugins);
+
+        // If no plugins have any iOS-related data, generate empty registrations
+        if (
+            $pluginsWithCode->isEmpty()
+            && $pluginsWithFunctions->isEmpty()
+            && $pluginsWithIosData->isEmpty()
+            && $pluginsWithRenderers->isEmpty()
+        ) {
+            $this->generateEmptyRegistration();
+            $this->generateEmptyRendererRegistration();
+
+            return;
+        }
+
+        // Copy plugin source files
+        $pluginsWithCode->each(fn (Plugin $plugin) => $this->copyPluginSources($plugin));
+
+        // Generate the registration file (filters for iOS functions internally)
+        $this->generateBridgeFunctionRegistration($allPlugins);
+
+        // Generate UI plugin renderer registration
+        $this->generateRendererRegistration($allPlugins);
+
+        // Merge Info.plist entries (for any plugins with iOS permissions)
+        $this->mergeInfoPlistEntries($allPlugins);
+        $this->warnWhenSceneManifestIsGenerated($allPlugins);
+
+        // Merge entitlements from plugins
+        $this->mergeEntitlements($allPlugins);
+
+        // Add Swift Package dependencies
+        $this->addSwiftPackageDependencies($allPlugins);
+
+        // Add CocoaPods dependencies
+        $this->addPodDependencies($allPlugins);
+
+        // Update Xcode project file
+        $this->updateXcodeProject($allPlugins);
+
+        // Copy manifest-declared assets
+        $hookRunner->copyManifestAssets();
+
+        // Run copy-assets hooks
+        $hookRunner->runCopyAssetsHooks();
+
+        // Run post-compile hooks
+        $hookRunner->runPostCompileHooks();
+    }
+
+    /**
+     * Copy Swift source files from plugin to iOS project
+     */
+    protected function copyPluginSources(Plugin $plugin): void
+    {
+        $sourcePath = $plugin->getIosSourcePath();
+
+        if (! $this->files->isDirectory($sourcePath)) {
+            return;
+        }
+
+        // Create plugin-specific subdirectory
+        $pluginDir = $this->generatedPath.'/'.$plugin->getNamespace();
+        $this->files->ensureDirectoryExists($pluginDir);
+
+        $explicit = $plugin->getIosSources();
+
+        if ($explicit !== []) {
+            $this->copyDeclaredSwiftSources($plugin, $sourcePath, $pluginDir, $explicit);
+
+            return;
+        }
+
+        $this->copySwiftFilesRecursively($sourcePath, $pluginDir);
+    }
+
+    /**
+     * Copy only the paths a plugin names in `ios.sources`.
+     *
+     * A named file is copied as-is; a named directory is walked with the same
+     * exclusions as the automatic path, so an explicit list still cannot drag
+     * a test target into the app.
+     *
+     * @param  list<string>  $sources
+     */
+    protected function copyDeclaredSwiftSources(Plugin $plugin, string $source, string $destination, array $sources): void
+    {
+        foreach ($sources as $relative) {
+            $relative = trim($relative, '/');
+            $path = $source.'/'.$relative;
+
+            if ($this->files->isDirectory($path)) {
+                $this->copySwiftFilesRecursively($path, $destination.'/'.$relative);
+
+                continue;
+            }
+
+            if (! $this->files->isFile($path)) {
+                $this->warn("Plugin '{$plugin->name}': ios.sources names a path that does not exist: {$relative}");
+
+                continue;
+            }
+
+            $this->files->ensureDirectoryExists(dirname($destination.'/'.$relative));
+            $this->files->copy($path, $destination.'/'.$relative);
+        }
+    }
+
+    /**
+     * Recursively copy Swift files, preserving directory structure.
+     *
+     * SwiftPM manifests, test targets and build residue are skipped —
+     * see SwiftSourceFilter for why each one cannot compile in an app target.
+     */
+    protected function copySwiftFilesRecursively(string $source, string $destination): void
+    {
+        foreach (SwiftSourceFilter::collect($source) as $relativePath) {
+            $destPath = $destination.'/'.$relativePath;
+
+            $this->files->ensureDirectoryExists(dirname($destPath));
+            $this->files->copy($source.'/'.$relativePath, $destPath);
+        }
+    }
+
+    /**
+     * Surface a build-time warning, when there is an output to surface it on.
+     */
+    protected function warn(string $message): void
+    {
+        if ($this->output === null) {
+            return;
+        }
+
+        // A Command has warn(); Illuminate\Console\OutputStyle — which is what
+        // the build commands actually pass — does not, so calling it blindly
+        // fataled the build and guarding on it swallowed the message entirely.
+        if (method_exists($this->output, 'warn')) {
+            $this->output->warn($message);
+
+            return;
+        }
+
+        if (method_exists($this->output, 'writeln')) {
+            $this->output->writeln("<comment>{$message}</comment>");
+        }
+    }
+
+    /**
+     * Generate PluginBridgeFunctionRegistration.swift
+     */
+    protected function generateBridgeFunctionRegistration(Collection $plugins): void
+    {
+        $registrations = [];
+        $initFunctions = [];
+
+        foreach ($plugins as $plugin) {
+            // Collect bridge function registrations
+            foreach ($plugin->getBridgeFunctions() as $function) {
+                if (empty($function['ios'])) {
+                    continue;
+                }
+
+                $registrations[] = [
+                    'name' => $function['name'],
+                    'class' => $function['ios'],
+                    'plugin' => $plugin->name,
+                ];
+            }
+
+            // Collect init functions
+            $initFunction = $plugin->getIosInitFunction();
+            if ($initFunction) {
+                $initFunctions[] = [
+                    'function' => $initFunction,
+                    'plugin' => $plugin->name,
+                ];
+            }
+        }
+
+        $content = $this->renderRegistrationTemplate($registrations, $initFunctions);
+        $path = $this->generatedPath.'/PluginBridgeFunctionRegistration.swift';
+
+        $this->files->put($path, $content);
+    }
+
+    /**
+     * Render the Swift registration file
+     */
+    protected function renderRegistrationTemplate(array $registrations, array $initFunctions = []): string
+    {
+        $registerCalls = collect($registrations)
+            ->map(function ($reg) {
+                return "    // Plugin: {$reg['plugin']}\n    registry.register(\"{$reg['name']}\", function: {$reg['class']}())";
+            })
+            ->implode("\n\n");
+
+        $initCalls = collect($initFunctions)
+            ->map(function ($init) {
+                return "    // Plugin: {$init['plugin']}\n    {$init['function']}()";
+            })
+            ->implode("\n\n");
+
+        return Stub::make('ios/PluginBridgeFunctionRegistration.swift.stub')
+            ->replace('REGISTRATIONS', $registerCalls)
+            ->replace('INIT_FUNCTIONS', $initCalls)
+            ->render();
+    }
+
+    /**
+     * Generate empty registration when no plugins
+     */
+    protected function generateEmptyRegistration(): void
+    {
+        $this->files->ensureDirectoryExists($this->generatedPath);
+
+        $content = Stub::make('ios/PluginBridgeFunctionRegistration.empty.swift.stub')->render();
+
+        $this->files->put($this->generatedPath.'/PluginBridgeFunctionRegistration.swift', $content);
+    }
+
+    /**
+     * Generate PluginRendererRegistration.swift for UI plugin renderers
+     */
+    protected function generateRendererRegistration(Collection $plugins): void
+    {
+        $registrations = [];
+
+        foreach ($plugins as $plugin) {
+            foreach ($plugin->getComponents() as $component) {
+                if (empty($component['ios_renderer'])) {
+                    continue;
+                }
+
+                $registrations[] = [
+                    'type' => $component['type'],
+                    'renderer' => $component['ios_renderer'],
+                    'plugin' => $plugin->name,
+                ];
+            }
+        }
+
+        if (empty($registrations)) {
+            $this->generateEmptyRendererRegistration();
+
+            return;
+        }
+
+        $registerCalls = collect($registrations)
+            ->map(function ($reg) {
+                return "    // Plugin: {$reg['plugin']}\n    SwiftUIRendererRegistry.shared.register(\"{$reg['type']}\") { AnyView({$reg['renderer']}(node: \$0)) }";
+            })
+            ->implode("\n\n");
+
+        $content = Stub::make('ios/PluginRendererRegistration.swift.stub')
+            ->replace('REGISTRATIONS', $registerCalls)
+            ->render();
+
+        $path = $this->generatedPath.'/PluginRendererRegistration.swift';
+        $this->files->put($path, $content);
+    }
+
+    /**
+     * Generate empty renderer registration when no UI plugins
+     */
+    protected function generateEmptyRendererRegistration(): void
+    {
+        $this->files->ensureDirectoryExists($this->generatedPath);
+
+        $content = Stub::make('ios/PluginRendererRegistration.empty.swift.stub')->render();
+
+        $this->files->put($this->generatedPath.'/PluginRendererRegistration.swift', $content);
+    }
+
+    /**
+     * Merge every plugin's Info.plist contributions into the device and
+     * simulator plists: a resources/ios/Info.plist file, the manifest's
+     * info_plist entries and its background modes, with app-level
+     * overrides applied last so they always win over plugins.
+     */
+    protected function mergeInfoPlistEntries(Collection $plugins): void
+    {
+        $plistPaths = [
+            $this->iosProjectPath.'/NativePHP/Info.plist',
+            $this->iosProjectPath.'/NativePHP-simulator-Info.plist',
+        ];
+
+        foreach ($plistPaths as $plistPath) {
+            if (! $this->files->exists($plistPath)) {
+                continue;
+            }
+
+            $plist = $this->openPlist($plistPath);
+
+            foreach ($plugins as $plugin) {
+                $pluginPlistPath = $plugin->path.'/resources/ios/Info.plist';
+
+                if ($this->files->exists($pluginPlistPath)) {
+                    $this->mergeIntoPlist($plist, $this->pluginPlistEntries($this->openPlist($pluginPlistPath)->all()));
+                }
+
+                $this->mergeIntoPlist($plist, $this->pluginPlistEntries($plugin->getIosInfoPlist()));
+
+                if ($modes = $plugin->getIosBackgroundModes()) {
+                    $this->mergeIntoPlist($plist, ['UIBackgroundModes' => $modes]);
+                }
+            }
+
+            $this->mergeIntoPlist($plist, $this->getAppInfoPlistOverrides());
+
+            $this->files->put($plistPath, $plist->toXml());
+        }
+    }
+
+    /**
+     * Projects installed before the Info.plist templates carried the scene
+     * manifest still let Xcode generate it, and a generated manifest replaces
+     * the merged one wholesale — dropping every plugin's scene configuration.
+     */
+    protected function warnWhenSceneManifestIsGenerated(Collection $plugins): void
+    {
+        $projectPath = $this->iosProjectPath.'/NativePHP.xcodeproj/project.pbxproj';
+
+        if (! $this->files->exists($projectPath)
+            || ! str_contains($this->files->get($projectPath), 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;')) {
+            return;
+        }
+
+        $plugins
+            ->filter(fn (Plugin $plugin) => $this->contributesSceneManifest($plugin))
+            ->each(fn (Plugin $plugin) => $this->warn(
+                "Plugin '{$plugin->name}' declares UIApplicationSceneManifest entries, but this iOS project generates its scene manifest, which overrides them. Re-run `php artisan native:install ios` to update the project."
+            ));
+    }
+
+    protected function contributesSceneManifest(Plugin $plugin): bool
+    {
+        if (array_key_exists('UIApplicationSceneManifest', $plugin->getIosInfoPlist())) {
+            return true;
+        }
+
+        $pluginPlistPath = $plugin->path.'/resources/ios/Info.plist';
+
+        return $this->files->exists($pluginPlistPath)
+            && array_key_exists('UIApplicationSceneManifest', $this->openPlist($pluginPlistPath)->all());
+    }
+
+    /**
+     * A plugin's plist contributions, minus the keys only the app decides.
+     *
+     * Entries merge, and lists union by content — so a plugin declaring
+     * CFBundleLocalizations would put languages back in the app's mouth by
+     * the side door that writeSupportedLocales() exists to close.
+     */
+    protected function pluginPlistEntries(array $entries): array
+    {
+        unset($entries['CFBundleLocalizations']);
+
+        return $entries;
+    }
+
+    /**
+     * Open a plist, naming the file when it does not parse.
+     */
+    protected function openPlist(string $path): PlistDocument
+    {
+        try {
+            return PlistDocument::fromXml($this->files->get($path));
+        } catch (InvalidArgumentException $e) {
+            throw new InvalidArgumentException("{$path}: {$e->getMessage()}", 0, $e);
+        }
+    }
+
+    /**
+     * Merge entries into a plist, resolving ${ENV_VAR} placeholders on the way in.
+     */
+    protected function mergeIntoPlist(PlistDocument $plist, array $entries): void
+    {
+        array_walk_recursive($entries, function (&$value) {
+            if (is_string($value)) {
+                $value = $this->substituteEnvPlaceholders($value);
+            }
+        });
+
+        $plist->merge($entries);
+    }
+
+    /**
+     * Read app-level Info.plist overrides from config('nativephp.permissions').
+     */
+    protected function getAppInfoPlistOverrides(): array
+    {
+        return config('nativephp.permissions', []);
+    }
+
+    /**
+     * Read app-level per-locale Info.plist overrides from
+     * config('nativephp.permission_localizations').
+     *
+     * Shape: ['nl' => ['NSCameraUsageDescription' => 'Dutch text'], 'fr' => [...]]
+     *
+     * @return array<string, array<string, string>>
+     */
+    protected function getAppInfoPlistLocalizations(): array
+    {
+        return config('nativephp.permission_localizations', []);
+    }
+
+    /**
+     * Declare the languages this app supports, and translate the permission
+     * strings for them.
+     *
+     * Two jobs that used to be one. The set of languages is scope, owned by
+     * the app through config('nativephp.supported_locales'); the per-locale
+     * permission strings are content, which plugins may ship. Deriving the
+     * first from the second meant a plugin translating its camera explainer
+     * into ten languages had the App Store advertise ten languages for an
+     * English-only app, since the store reads that list off the binary.
+     */
+    protected function writeSupportedLocales(Collection $plugins): void
+    {
+        $locales = SupportedLocales::fromConfig();
+
+        foreach ($locales->warnings(lang_path()) as $warning) {
+            $this->warn($warning);
+        }
+
+        $this->declareBundleLocalizations($locales);
+        $this->writeInfoPlistLocalizations($plugins, $locales);
+    }
+
+    /**
+     * Record the supported languages as CFBundleLocalizations.
+     *
+     * A NativePHP app translates in PHP, against Laravel's lang files, so it
+     * has no .lproj resources to infer languages from the way a native app
+     * does. CFBundleLocalizations is Apple's answer for exactly that case: it
+     * is what makes the app offer a language in Settings and what the App
+     * Store lists on the product page.
+     *
+     * Set rather than merged — merging unions lists by content, which would
+     * make a removed language impossible to un-ship.
+     */
+    protected function declareBundleLocalizations(SupportedLocales $locales): void
+    {
+        $plistPaths = [
+            $this->iosProjectPath.'/NativePHP/Info.plist',
+            $this->iosProjectPath.'/NativePHP-simulator-Info.plist',
+        ];
+
+        foreach ($plistPaths as $plistPath) {
+            if (! $this->files->exists($plistPath)) {
+                continue;
+            }
+
+            $plist = $this->openPlist($plistPath);
+
+            if ($plist->get('CFBundleLocalizations') === $locales->all()) {
+                continue;
+            }
+
+            $plist->set('CFBundleLocalizations', $locales->all());
+
+            $this->files->put($plistPath, $plist->toXml());
+        }
+    }
+
+    /**
+     * Write {locale}.lproj/InfoPlist.strings for each supported locale that
+     * has per-locale permission strings, and register those locales with the
+     * Xcode project so they ship with the app bundle.
+     *
+     * Plugin manifests contribute via `ios.info_plist_localizations`; the app
+     * config wins on key collisions, mirroring how flat entries are merged.
+     * A plugin's locale the app does not support is dropped: a plugin brings
+     * translations, never languages.
+     */
+    protected function writeInfoPlistLocalizations(Collection $plugins, SupportedLocales $locales): void
+    {
+        // [locale => [key => value]]
+        $merged = [];
+
+        foreach ($plugins as $plugin) {
+            foreach ($plugin->getIosInfoPlistLocalizations() as $locale => $entries) {
+                if (! is_array($entries) || ! $locales->allows((string) $locale)) {
+                    continue;
+                }
+                $locale = SupportedLocales::normalize((string) $locale);
+                $merged[$locale] = array_merge($merged[$locale] ?? [], $entries);
+            }
+        }
+
+        foreach ($this->getAppInfoPlistLocalizations() as $locale => $entries) {
+            if (! is_array($entries) || ! $locales->allows((string) $locale)) {
+                continue;
+            }
+            $locale = SupportedLocales::normalize((string) $locale);
+            $merged[$locale] = array_merge($merged[$locale] ?? [], $entries);
+        }
+
+        // Write one .lproj folder per locale inside the synced NativePHP group;
+        // Xcode 16's PBXFileSystemSynchronizedRootGroup picks them up automatically.
+        $resourcesRoot = $this->iosProjectPath.'/NativePHP';
+
+        foreach ($merged as $locale => $entries) {
+            $lprojPath = $resourcesRoot.'/'.$locale.'.lproj';
+            $this->files->ensureDirectoryExists($lprojPath);
+
+            $this->files->put(
+                $lprojPath.'/InfoPlist.strings',
+                $this->renderInfoPlistStrings($entries)
+            );
+        }
+
+        $this->registerKnownRegions(array_keys($merged));
+
+        // Runs on every compile, not just when something was written: a
+        // language the app stopped supporting has to stop shipping.
+        $this->pruneLocalizations($resourcesRoot, array_keys($merged), $locales);
+    }
+
+    /**
+     * Drop the .lproj folders, and the knownRegions entries, of locales the
+     * app no longer writes strings for.
+     *
+     * Only folders holding nothing but the InfoPlist.strings we generate are
+     * removed — a developer keeping their own localized resources next to
+     * ours owns that folder, and losing it to a config edit would be a much
+     * worse bug than a stale language.
+     *
+     * @param  list<string>  $written  Locales this compile wrote
+     */
+    protected function pruneLocalizations(string $resourcesRoot, array $written, SupportedLocales $locales): void
+    {
+        if (! $this->files->isDirectory($resourcesRoot)) {
+            return;
+        }
+
+        $stale = [];
+
+        foreach ($this->files->directories($resourcesRoot) as $directory) {
+            $name = basename($directory);
+
+            if (! str_ends_with($name, '.lproj')) {
+                continue;
+            }
+
+            $locale = substr($name, 0, -strlen('.lproj'));
+
+            if (in_array($locale, $written, true)) {
+                continue;
+            }
+
+            $contents = array_map(fn ($file) => $file->getFilename(), $this->files->files($directory));
+
+            if ($contents !== ['InfoPlist.strings'] || ! empty($this->files->directories($directory))) {
+                continue;
+            }
+
+            $this->files->deleteDirectory($directory);
+            $stale[] = $locale;
+        }
+
+        if (! empty($stale)) {
+            $this->pruneKnownRegions($stale, $locales);
+        }
+    }
+
+    /**
+     * Render a strings file body. iOS expects UTF-8 with one `"key" = "value";`
+     * entry per line; backslashes, quotes, and newlines must be escaped.
+     */
+    protected function renderInfoPlistStrings(array $entries): string
+    {
+        ksort($entries);
+
+        $lines = [];
+        foreach ($entries as $key => $value) {
+            if (! is_string($value)) {
+                continue;
+            }
+            $value = $this->substituteEnvPlaceholders($value);
+            $lines[] = sprintf(
+                '"%s" = "%s";',
+                $this->escapeStringsLiteral((string) $key),
+                $this->escapeStringsLiteral($value)
+            );
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * Escape a value for inclusion in a .strings file literal.
+     */
+    protected function escapeStringsLiteral(string $value): string
+    {
+        return strtr($value, [
+            '\\' => '\\\\',
+            '"' => '\\"',
+            "\n" => '\\n',
+            "\r" => '\\r',
+            "\t" => '\\t',
+        ]);
+    }
+
+    /**
+     * Add any new locales to the PBXProject's `knownRegions` list so Xcode
+     * includes the .lproj folders during the resource copy phase. The
+     * `developmentRegion` is left untouched; Info.plist remains the source
+     * of truth for the default language.
+     */
+    protected function registerKnownRegions(array $locales): void
+    {
+        $projectPath = $this->iosProjectPath.'/NativePHP.xcodeproj/project.pbxproj';
+
+        if (! $this->files->exists($projectPath)) {
+            return;
+        }
+
+        $pbxproj = $this->files->get($projectPath);
+
+        $pattern = '/(knownRegions\s*=\s*\()([^)]*)(\s*\))/s';
+
+        if (! preg_match($pattern, $pbxproj)) {
+            return;
+        }
+
+        $updated = preg_replace_callback($pattern, function ($matches) use ($locales) {
+            $existing = $matches[2];
+            $additions = '';
+
+            foreach ($locales as $locale) {
+                // Match on delimiters so `en` doesn't match `en-GB`.
+                if (preg_match('/(^|,|\s)'.preg_quote($locale, '/').'(\s*,|\s*$)/', $existing)) {
+                    continue;
+                }
+
+                $additions .= "\n\t\t\t\t".$locale.',';
+            }
+
+            if ($additions === '') {
+                return $matches[0];
+            }
+
+            return $matches[1].rtrim($matches[2], "\n\t ").$additions."\n\t\t\t".ltrim($matches[3]);
+        }, $pbxproj, 1);
+
+        if ($updated !== null && $updated !== $pbxproj) {
+            $this->files->put($projectPath, $updated);
+        }
+    }
+
+    /**
+     * Remove locales from `knownRegions` once their .lproj folders are gone.
+     *
+     * The sibling above only ever adds, which is why a language could be
+     * shipped but never un-shipped. Only locales this compiler wrote are
+     * removed: `Base`, the development region and the app's own language stay
+     * whatever the project says they are.
+     *
+     * @param  list<string>  $locales
+     */
+    protected function pruneKnownRegions(array $locales, SupportedLocales $supported): void
+    {
+        $projectPath = $this->iosProjectPath.'/NativePHP.xcodeproj/project.pbxproj';
+
+        if (! $this->files->exists($projectPath)) {
+            return;
+        }
+
+        $pbxproj = $this->files->get($projectPath);
+
+        $removable = array_filter(
+            $locales,
+            fn (string $locale) => $locale !== 'Base' && strcasecmp($locale, $supported->base()) !== 0
+        );
+
+        if (empty($removable)) {
+            return;
+        }
+
+        $updated = preg_replace_callback('/(knownRegions\s*=\s*\()([^)]*)(\s*\))/s', function ($matches) use ($removable) {
+            $existing = $matches[2];
+
+            foreach ($removable as $locale) {
+                // Delimited both ways: `en` must not take `en-GB` with it, and
+                // `Hans` must not eat the tail of `zh-Hans`.
+                $existing = preg_replace(
+                    '/(^|,)\s*'.preg_quote($locale, '/').'\s*,/',
+                    '$1',
+                    $existing,
+                    1
+                );
+            }
+
+            return $matches[1].$existing.$matches[3];
+        }, $pbxproj, 1);
+
+        if ($updated !== null && $updated !== $pbxproj) {
+            $this->files->put($projectPath, $updated);
+        }
+    }
+
+    /**
+     * Substitute ${ENV_VAR} placeholders with actual environment values
+     */
+    protected function substituteEnvPlaceholders(string $value): string
+    {
+        return preg_replace_callback('/\$\{([A-Z_][A-Z0-9_]*)\}/', function ($matches) {
+            $envVar = $matches[1];
+            $envValue = env($envVar);
+
+            if ($envValue === null) {
+                // Return the placeholder as-is if not found - validation will catch this
+                return $matches[0];
+            }
+
+            return $envValue;
+        }, $value);
+    }
+
+    /**
+     * Merge entitlements from plugins into the app's entitlements file
+     */
+    protected function mergeEntitlements(Collection $plugins): void
+    {
+        $entitlementsPath = $this->iosProjectPath.'/NativePHP/NativePHP.entitlements';
+
+        // Collect all entitlements from plugins
+        $allEntitlements = [];
+
+        foreach ($plugins as $plugin) {
+            $entitlements = $plugin->getIosEntitlements();
+            foreach ($entitlements as $key => $value) {
+                $allEntitlements[$key] = $value;
+            }
+        }
+
+        if (empty($allEntitlements)) {
+            return;
+        }
+
+        // If entitlements file doesn't exist, create it
+        if (! $this->files->exists($entitlementsPath)) {
+            $this->createEntitlementsFile($entitlementsPath, $allEntitlements);
+
+            return;
+        }
+
+        // Merge into existing entitlements file
+        $entitlementsPlist = $this->files->get($entitlementsPath);
+        $entitlementsPlist = $this->injectEntitlements($entitlementsPlist, $allEntitlements);
+
+        $this->files->put($entitlementsPath, $entitlementsPlist);
+    }
+
+    /**
+     * Create a new entitlements plist file
+     */
+    protected function createEntitlementsFile(string $path, array $entitlements): void
+    {
+        $entries = '';
+
+        foreach ($entitlements as $key => $value) {
+            if (is_bool($value)) {
+                $entries .= "\t<key>{$key}</key>\n\t<".($value ? 'true' : 'false')."/>\n";
+            } elseif (is_array($value)) {
+                $arrayContent = '';
+                foreach ($value as $item) {
+                    $arrayContent .= "\t\t<string>{$item}</string>\n";
+                }
+                $entries .= "\t<key>{$key}</key>\n\t<array>\n{$arrayContent}\t</array>\n";
+            } else {
+                $entries .= "\t<key>{$key}</key>\n\t<string>{$value}</string>\n";
+            }
+        }
+
+        $content = <<<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+{$entries}</dict>
+</plist>
+PLIST;
+
+        $this->files->put($path, $content);
+    }
+
+    /**
+     * Inject entitlements into an existing entitlements plist
+     */
+    protected function injectEntitlements(string $plist, array $entitlements): string
+    {
+        foreach ($entitlements as $key => $value) {
+            // Skip if key already exists
+            if (str_contains($plist, "<key>{$key}</key>")) {
+                continue;
+            }
+
+            if (is_bool($value)) {
+                $entry = "\n\t<key>{$key}</key>\n\t<".($value ? 'true' : 'false').'/>';
+            } elseif (is_array($value)) {
+                $arrayContent = '';
+                foreach ($value as $item) {
+                    $arrayContent .= "\n\t\t<string>{$item}</string>";
+                }
+                $entry = "\n\t<key>{$key}</key>\n\t<array>{$arrayContent}\n\t</array>";
+            } else {
+                $entry = "\n\t<key>{$key}</key>\n\t<string>{$value}</string>";
+            }
+
+            // Add before closing </dict>
+            $plist = preg_replace(
+                '/(\s*<\/dict>\s*<\/plist>)/s',
+                $entry.'$1',
+                $plist,
+                1
+            );
+        }
+
+        return $plist;
+    }
+
+    /**
+     * Add Swift Package Manager dependencies from plugins to project.pbxproj
+     */
+    protected function addSwiftPackageDependencies(Collection $plugins): void
+    {
+        $projectPath = $this->iosProjectPath.'/NativePHP.xcodeproj/project.pbxproj';
+
+        if (! $this->files->exists($projectPath)) {
+            return;
+        }
+
+        $packagesToAdd = [];
+
+        foreach ($plugins as $plugin) {
+            $iosDeps = $plugin->getIosDependencies();
+            $packages = $iosDeps['swift_packages'] ?? [];
+
+            foreach ($packages as $package) {
+                if (isset($package['url'])) {
+                    $packagesToAdd[] = $package;
+                }
+            }
+        }
+
+        if (empty($packagesToAdd)) {
+            return;
+        }
+
+        $pbxproj = $this->files->get($projectPath);
+
+        foreach ($packagesToAdd as $package) {
+            $pbxproj = $this->injectSwiftPackage($pbxproj, $package);
+        }
+
+        $this->files->put($projectPath, $pbxproj);
+    }
+
+    /**
+     * Inject a Swift Package into the pbxproj file
+     */
+    protected function injectSwiftPackage(string $pbxproj, array $package): string
+    {
+        $url = $package['url'];
+        $version = $package['version'] ?? '1.0.0';
+        $products = $package['products'] ?? [basename(parse_url($url, PHP_URL_PATH) ?? $url)];
+        $packageName = basename(parse_url($url, PHP_URL_PATH) ?? $url);
+
+        // Check if package reference already exists - if so, get its ID
+        $packageRefId = $this->findExistingPackageRefId($pbxproj, $url);
+
+        if ($packageRefId === null) {
+            // Generate new UUID for the package reference
+            $packageRefId = $this->generatePbxUuid();
+
+            // 1. Add XCRemoteSwiftPackageReference section entry
+            $pbxproj = $this->addRemotePackageReference($pbxproj, $packageRefId, $packageName, $url, $version);
+
+            // 2. Add to project's packageReferences array
+            $pbxproj = $this->addToProjectPackageReferences($pbxproj, $packageRefId, $packageName);
+        }
+
+        // 3. For each product, add dependencies to targets (always check all targets)
+        foreach ($products as $productName) {
+            $pbxproj = $this->addProductDependencyToTargets($pbxproj, $packageRefId, $productName);
+        }
+
+        return $pbxproj;
+    }
+
+    /**
+     * Find existing package reference ID by URL
+     */
+    protected function findExistingPackageRefId(string $pbxproj, string $url): ?string
+    {
+        // Look for: ABC123 /* XCRemoteSwiftPackageReference ... */ = { ... repositoryURL = "url"; ... }
+        if (preg_match('/([A-F0-9]{24})\s*\/\*\s*XCRemoteSwiftPackageReference[^*]*\*\/\s*=\s*\{[^}]*repositoryURL\s*=\s*"'.preg_quote($url, '/').'"/', $pbxproj, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Generate a unique 24-character hex UUID for pbxproj entries
+     */
+    protected function generatePbxUuid(): string
+    {
+        return strtoupper(bin2hex(random_bytes(12)));
+    }
+
+    /**
+     * Add XCRemoteSwiftPackageReference entry to the pbxproj
+     */
+    protected function addRemotePackageReference(string $pbxproj, string $id, string $name, string $url, string $version): string
+    {
+        $entry = <<<ENTRY
+		{$id} /* XCRemoteSwiftPackageReference "{$name}" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "{$url}";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = {$version};
+			};
+		};
+ENTRY;
+
+        // Find the /* End XCRemoteSwiftPackageReference section */ marker or create the section
+        if (str_contains($pbxproj, '/* End XCRemoteSwiftPackageReference section */')) {
+            $pbxproj = str_replace(
+                '/* End XCRemoteSwiftPackageReference section */',
+                $entry."\n/* End XCRemoteSwiftPackageReference section */",
+                $pbxproj
+            );
+        } else {
+            // Create the section before /* End PBXProject section */
+            $section = <<<SECTION
+
+/* Begin XCRemoteSwiftPackageReference section */
+{$entry}
+/* End XCRemoteSwiftPackageReference section */
+SECTION;
+            $pbxproj = str_replace(
+                '/* End PBXProject section */',
+                '/* End PBXProject section */'.$section,
+                $pbxproj
+            );
+        }
+
+        return $pbxproj;
+    }
+
+    /**
+     * Add package reference to the project object's packageReferences array
+     */
+    protected function addToProjectPackageReferences(string $pbxproj, string $packageRefId, string $packageName): string
+    {
+        $reference = "\n\t\t\t\t{$packageRefId} /* XCRemoteSwiftPackageReference \"{$packageName}\" */,";
+
+        // Check if packageReferences already exists in the project object
+        if (preg_match('/(\s*packageReferences\s*=\s*\()/', $pbxproj)) {
+            // Add to existing packageReferences array
+            $pbxproj = preg_replace(
+                '/(\s*packageReferences\s*=\s*\()/',
+                '$1'.$reference,
+                $pbxproj,
+                1
+            );
+        } else {
+            // Add packageReferences array to the project object (after buildConfigurationList line)
+            $packageReferencesArray = "\n\t\t\tpackageReferences = ({$reference}\n\t\t\t);";
+            $pbxproj = preg_replace(
+                '/(buildConfigurationList\s*=\s*[A-F0-9]+\s*\/\*[^*]*\*\/\s*;)/',
+                '$1'.$packageReferencesArray,
+                $pbxproj,
+                1
+            );
+        }
+
+        return $pbxproj;
+    }
+
+    /**
+     * Add XCSwiftPackageProductDependency for each target
+     */
+    protected function addProductDependencyToTargets(string $pbxproj, string $packageRefId, string $productName): string
+    {
+        // Find all targets (NativePHP, NativePHP-simulator)
+        $targets = ['NativePHP', 'NativePHP-simulator'];
+
+        foreach ($targets as $targetName) {
+            // Generate a unique UUID for this product dependency
+            $productDepId = $this->generatePbxUuid();
+
+            // 1. Add XCSwiftPackageProductDependency entry
+            $pbxproj = $this->addSwiftPackageProductDependency($pbxproj, $productDepId, $packageRefId, $productName);
+
+            // 2. Add to target's packageProductDependencies array
+            $pbxproj = $this->addToTargetPackageProductDependencies($pbxproj, $targetName, $productDepId, $productName);
+        }
+
+        return $pbxproj;
+    }
+
+    /**
+     * Add XCSwiftPackageProductDependency section entry
+     */
+    protected function addSwiftPackageProductDependency(string $pbxproj, string $id, string $packageRefId, string $productName): string
+    {
+        $entry = <<<ENTRY
+		{$id} /* {$productName} */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = {$packageRefId} /* XCRemoteSwiftPackageReference */;
+			productName = {$productName};
+		};
+ENTRY;
+
+        // Find the /* End XCSwiftPackageProductDependency section */ marker or create the section
+        if (str_contains($pbxproj, '/* End XCSwiftPackageProductDependency section */')) {
+            $pbxproj = str_replace(
+                '/* End XCSwiftPackageProductDependency section */',
+                $entry."\n/* End XCSwiftPackageProductDependency section */",
+                $pbxproj
+            );
+        } else {
+            // Create the section before the end of the file (before closing brace)
+            $section = <<<SECTION
+
+/* Begin XCSwiftPackageProductDependency section */
+{$entry}
+/* End XCSwiftPackageProductDependency section */
+SECTION;
+            // Insert before the final closing brace
+            $pbxproj = preg_replace('/(\n}\s*)$/', $section.'$1', $pbxproj);
+        }
+
+        return $pbxproj;
+    }
+
+    /**
+     * Add product dependency to a target's packageProductDependencies array
+     */
+    protected function addToTargetPackageProductDependencies(string $pbxproj, string $targetName, string $productDepId, string $productName): string
+    {
+        // First, check if this product is already in this target's dependencies
+        // Look for the target block and check its packageProductDependencies
+        if ($this->targetHasProductDependency($pbxproj, $targetName, $productName)) {
+            return $pbxproj;
+        }
+
+        $reference = "\n\t\t\t\t{$productDepId} /* {$productName} */,";
+
+        // Find the native target section by looking for its name followed by packageProductDependencies
+        // Use a more specific pattern that matches the PBXNativeTarget structure
+        // The pattern looks for: name = "TargetName"; (with potential quotes) followed by packageProductDependencies
+        $escapedName = preg_quote($targetName, '/');
+        $targetPattern = '/(name\s*=\s*"?'.$escapedName.'"?;\s*)([\s\S]*?)(packageProductDependencies\s*=\s*\()/';
+
+        if (preg_match($targetPattern, $pbxproj, $matches)) {
+            // Target already has packageProductDependencies, add to it
+            $pbxproj = preg_replace(
+                $targetPattern,
+                '$1$2$3'.$reference,
+                $pbxproj,
+                1
+            );
+        } else {
+            // Need to add packageProductDependencies array to the target
+            // Find the target by name and add after productReference line
+            $addArrayPattern = '/(name\s*=\s*"?'.$escapedName.'"?;\s*[\s\S]*?)(productReference\s*=\s*[A-F0-9]+\s*\/\*[^*]*\*\/\s*;)/';
+
+            if (preg_match($addArrayPattern, $pbxproj)) {
+                $packageProductDeps = "\n\t\t\tpackageProductDependencies = ({$reference}\n\t\t\t);";
+                $pbxproj = preg_replace(
+                    $addArrayPattern,
+                    '$1$2'.$packageProductDeps,
+                    $pbxproj,
+                    1
+                );
+            }
+        }
+
+        return $pbxproj;
+    }
+
+    /**
+     * Check if a target already has a specific product dependency
+     */
+    protected function targetHasProductDependency(string $pbxproj, string $targetName, string $productName): bool
+    {
+        // Extract just this target's packageProductDependencies array
+        $targetDeps = $this->extractTargetPackageProductDependencies($pbxproj, $targetName);
+
+        if ($targetDeps === null) {
+            return false;
+        }
+
+        // Check if the product name is in the dependencies
+        return str_contains($targetDeps, "/* {$productName} */");
+    }
+
+    /**
+     * Extract the packageProductDependencies array content for a specific target
+     */
+    protected function extractTargetPackageProductDependencies(string $pbxproj, string $targetName): ?string
+    {
+        // Find the target block by looking for its unique structure
+        // PBXNativeTarget entries have: name = TargetName; and end with productType = "...";
+        $escapedName = preg_quote($targetName, '/');
+
+        // Match from target name to productType (which marks the end of the target block)
+        $pattern = '/name\s*=\s*"?'.$escapedName.'"?;.*?productType\s*=\s*"[^"]+"\s*;/s';
+
+        if (! preg_match($pattern, $pbxproj, $matches)) {
+            return null;
+        }
+
+        $targetBlock = $matches[0];
+
+        // Now extract packageProductDependencies from within this target block
+        if (preg_match('/packageProductDependencies\s*=\s*\(([^)]*)\)/', $targetBlock, $depMatches)) {
+            return $depMatches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Add CocoaPods dependencies from plugins to Podfile
+     *
+     * Supports pod format:
+     *   {"name": "MapboxMaps", "version": "~> 11.0"}
+     */
+    protected function addPodDependencies(Collection $plugins): void
+    {
+        $podsToAdd = [];
+
+        foreach ($plugins as $plugin) {
+            $iosDeps = $plugin->getIosDependencies();
+            $pods = $iosDeps['pods'] ?? [];
+
+            foreach ($pods as $pod) {
+                // Handle object format: {"name": "...", "version": "..."}
+                if (is_array($pod) && isset($pod['name'])) {
+                    $key = $pod['name'];
+                    $podsToAdd[$key] = $pod;
+                } elseif (is_string($pod)) {
+                    // Legacy string format
+                    $podsToAdd[$pod] = ['name' => $pod];
+                }
+            }
+        }
+
+        if (empty($podsToAdd)) {
+            return;
+        }
+
+        // Check if Podfile exists, create if not
+        $podfilePath = $this->iosProjectPath.'/Podfile';
+
+        if (! $this->files->exists($podfilePath)) {
+            $this->createPodfile($podfilePath);
+        }
+
+        $podfile = $this->files->get($podfilePath);
+
+        // Filter out pods that already exist in the Podfile (outside of our managed section)
+        $newPods = collect($podsToAdd)
+            ->filter(function ($pod) use ($podfile) {
+                $name = $pod['name'];
+                // Check if pod exists outside of our plugin dependencies section
+                $podfileWithoutSection = preg_replace(
+                    '/# NativePHP Plugin Dependencies\n(?:[ \t]*pod\s+\'[^\']+\'(?:,\s*\'[^\']+\')?\n?)*/s',
+                    '',
+                    $podfile
+                );
+
+                return ! preg_match("/pod\s+['\"]".preg_quote($name, '/')."['\"]/", $podfileWithoutSection);
+            });
+
+        // Build the new plugin pods section
+        $newPodLines = $newPods
+            ->map(function ($pod) {
+                $name = $pod['name'];
+                $version = $pod['version'] ?? null;
+
+                if ($version) {
+                    return "  pod '{$name}', '{$version}'";
+                }
+
+                return "  pod '{$name}'";
+            })
+            ->implode("\n");
+
+        // Remove existing plugin dependencies section (if any)
+        $podfile = preg_replace(
+            '/[ \t]*# NativePHP Plugin Dependencies\n(?:[ \t]*pod\s+\'[^\']+\'(?:,\s*\'[^\']+\')?\n?)*/s',
+            '',
+            $podfile
+        );
+
+        // If no new pods to add, just save cleaned podfile
+        if ($newPods->isEmpty()) {
+            $this->files->put($podfilePath, $podfile);
+
+            return;
+        }
+
+        // Check if marker exists (preferred injection point).
+        //
+        // The shipped iOS Podfile template uses a paired marker block so the same
+        // injection site works on every run:
+        //
+        //   # NATIVEPHP_PLUGIN_PODS_START
+        //   # NATIVEPHP_PLUGIN_PODS_END
+        //
+        // Replace the entire block (preserving the markers) so subsequent runs are
+        // idempotent. A naive str_replace on '# NATIVEPHP_PLUGIN_PODS' would match
+        // both marker lines and corrupt them into 'pod ...'_START / 'pod ...'_END.
+        $blockPattern = '/^[ \t]*# NATIVEPHP_PLUGIN_PODS_START\s*?\R.*?^[ \t]*# NATIVEPHP_PLUGIN_PODS_END[ \t]*$/ms';
+
+        if (preg_match($blockPattern, $podfile)) {
+            $replacement = "  # NATIVEPHP_PLUGIN_PODS_START\n"
+                ."  # NativePHP Plugin Dependencies\n"
+                ."{$newPodLines}\n"
+                .'  # NATIVEPHP_PLUGIN_PODS_END';
+
+            $podfile = preg_replace_callback(
+                $blockPattern,
+                fn () => $replacement,
+                $podfile,
+                1
+            );
+        } elseif (str_contains($podfile, '# NATIVEPHP_PLUGIN_PODS')) {
+            // Legacy single-marker template — replace it once with the comment + pods.
+            $podfile = preg_replace(
+                '/# NATIVEPHP_PLUGIN_PODS\b(?!_)/',
+                "# NativePHP Plugin Dependencies\n".addcslashes($newPodLines, '\\$'),
+                $podfile,
+                1
+            );
+        } else {
+            // Find the NativePHP target block and insert before its 'end'
+            // Use a more precise pattern that only matches within the target block
+            $lines = explode("\n", $podfile);
+            $result = [];
+            $inNativePHPTarget = false;
+            $inserted = false;
+
+            foreach ($lines as $line) {
+                // Detect start of NativePHP target (not simulator)
+                if (preg_match('/^target\s+[\'"]NativePHP[\'"]\s+do/', $line)) {
+                    $inNativePHPTarget = true;
+                }
+
+                // If we're in the target and hit 'end', insert pods before it
+                if ($inNativePHPTarget && ! $inserted && preg_match('/^end\s*$/', $line)) {
+                    $result[] = '  # NativePHP Plugin Dependencies';
+                    $result[] = $newPodLines;
+                    $inserted = true;
+                    $inNativePHPTarget = false;
+                }
+
+                $result[] = $line;
+            }
+
+            $podfile = implode("\n", $result);
+        }
+
+        $this->files->put($podfilePath, $podfile);
+    }
+
+    /**
+     * Create a basic Podfile for the iOS project
+     */
+    protected function createPodfile(string $podfilePath): void
+    {
+        $podfile = <<<'PODFILE'
+platform :ios, '15.0'
+use_frameworks!
+
+target 'NativePHP' do
+  # NATIVEPHP_PLUGIN_PODS_START
+  # NATIVEPHP_PLUGIN_PODS_END
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+    end
+  end
+end
+PODFILE;
+
+        $this->files->put($podfilePath, $podfile);
+    }
+
+    /**
+     * Update Xcode project to include plugin files
+     */
+    protected function updateXcodeProject(Collection $plugins): void
+    {
+        $projectPath = $this->iosProjectPath.'/NativePHP.xcodeproj/project.pbxproj';
+
+        if (! $this->files->exists($projectPath)) {
+            return;
+        }
+
+        // Note: Modifying pbxproj is complex. For a robust solution,
+        // consider using a tool like xcodeproj (Ruby) or PBXProj parser.
+        //
+        // For now, we'll add files to a group that's already set up to
+        // include all files in the Plugins directory automatically.
+        //
+        // Alternative approach: Use a folder reference in Xcode that
+        // automatically includes all files in the Plugins directory.
+
+        // The simplest approach is to ensure the Xcode project has a
+        // folder reference to Bridge/Plugins/ which auto-includes files.
+
+        $this->ensurePluginsFolderReference($projectPath);
+    }
+
+    /**
+     * Ensure Xcode project has folder reference for plugins
+     */
+    protected function ensurePluginsFolderReference(string $projectPath): void
+    {
+        // This is a placeholder for more complex Xcode project manipulation
+        // In practice, you may want to:
+        // 1. Use a build phase script that compiles all .swift files in Plugins/
+        // 2. Use a folder reference in Xcode
+        // 3. Use CocoaPods or SPM for plugin distribution
+
+        // For now, we'll rely on the folder reference approach
+        // which requires one-time Xcode project setup
+    }
+
+    /**
+     * Clean up generated plugin files
+     */
+    public function clean(): void
+    {
+        if ($this->files->isDirectory($this->generatedPath)) {
+            $this->files->deleteDirectory($this->generatedPath);
+        }
+    }
+
+    /**
+     * Get list of generated Swift files for Xcode
+     */
+    public function getGeneratedFiles(): array
+    {
+        if (! $this->files->isDirectory($this->generatedPath)) {
+            return [];
+        }
+
+        return collect($this->files->allFiles($this->generatedPath))
+            ->filter(fn ($file) => $file->getExtension() === 'swift')
+            ->map(fn ($file) => $file->getPathname())
+            ->values()
+            ->all();
+    }
+}

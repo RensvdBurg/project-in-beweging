@@ -1,0 +1,102 @@
+{
+    "name": "nativephp/mobile",
+    "description": "NativePHP for Mobile",
+    "keywords": [
+        "nativephp",
+        "laravel",
+        "ios",
+        "android"
+    ],
+    "homepage": "https://nativephp.com/mobile",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Simon Hamp",
+            "email": "simon@nativephp.com",
+            "role": "Co-founder"
+        },
+        {
+            "name": "Shane Rosenthal",
+            "email": "shane@nativephp.com",
+            "role": "Co-founder"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "ext-dom": "*",
+        "ext-simplexml": "*",
+        "workerman/workerman": "^4.1",
+        "guzzlehttp/guzzle": "^7.9 || ^8.0",
+        "illuminate/contracts": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+        "laravel/prompts": "^0.1.1|^0.2|^0.3",
+        "laravel/serializable-closure": "^1.3|^2.0",
+        "symfony/process": "^6.2|^7.0|^8.0",
+        "endroid/qr-code": "^6.0.9",
+        "react/datagram": "^1.10",
+        "spatie/laravel-package-tools": "^1.14.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.0",
+        "nunomaduro/collision": "^8.0",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-arch": "^3.0",
+        "pestphp/pest-plugin-laravel": "^3.0",
+        "phpstan/extension-installer": "^1.1",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpstan/phpstan-phpunit": "^2.0",
+        "spatie/laravel-ray": "^1.40"
+    },
+    "suggest": {
+        "ext-zip": "Required by native:install to validate and extract the downloaded Android PHP binary archives"
+    },
+    "conflict": {
+        "nativephp/mobile-device": "*",
+        "nativephp/mobile-dialog": "*",
+        "nativephp/mobile-file": "*",
+        "nativephp/mobile-system": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Native\\Mobile\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "qa": [
+            "@composer format",
+            "@composer analyse",
+            "@composer test"
+        ],
+        "post-autoload-dump": "@php ./vendor/bin/testbench package:discover --ansi",
+        "analyse": "vendor/bin/phpstan analyse",
+        "test": "vendor/bin/pest",
+        "test-coverage": "vendor/bin/pest --coverage",
+        "format": "vendor/bin/pint"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Native\\Mobile\\NativeServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

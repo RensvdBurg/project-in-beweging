@@ -1,0 +1,1092 @@
+import WebKit
+
+class PHPSchemeHandler: NSObject, WKURLSchemeHandler {
+    let domain = "127.0.0.1"
+
+    /// When set, requests are served by this webview's own PHP context
+    /// instead of the persistent runtime's serial queue. Embedded php-mode
+    /// webviews inside native screens MUST set this: the persistent queue is
+    /// parked in the screen's event-loop dispatch and would never answer.
+    var dedicatedRuntime: WebviewPHPRuntime?
+
+    /// The webview an embedded handler serves, so a redirect it can't follow
+    /// itself is loaded there and not in the root webview. Only kept when
+    /// `dedicatedRuntime` is set; each embedded webview has its own handler.
+    private weak var embeddedWebView: WKWebView?
+
+    // Shared session for Jump WebView-mode forwards. Reused across requests so
+    // HTTP keep-alive / connection pooling kicks in — a fresh session per
+    // request re-did the TCP handshake every time and made navigation crawl.
+    // Cookies are NOT auto-stored here; forwardToRemote rebinds remote
+    // Set-Cookies to 127.0.0.1 in the WebView store (the single cookie source).
+    static let forwardSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpShouldSetCookies = false
+        return URLSession(configuration: config)
+    }()
+
+    private let maxRedirects = 10
+    private var activeTasks: [ObjectIdentifier: WKURLSchemeTask] = [:]
+    private let taskLock = NSLock()
+
+    // This method is called when the web view starts loading a request with your custom scheme
+    func webView(_ webView: WKWebView, start schemeTask: WKURLSchemeTask) {
+        if dedicatedRuntime != nil {
+            embeddedWebView = webView
+        }
+        taskLock.lock()
+        activeTasks[ObjectIdentifier(schemeTask)] = schemeTask
+        taskLock.unlock()
+        startLoading(for: schemeTask)
+    }
+
+    // This method is called if the web view stops loading the request
+    func webView(_ webView: WKWebView, stop schemeTask: WKURLSchemeTask) {
+        taskLock.lock()
+        activeTasks.removeValue(forKey: ObjectIdentifier(schemeTask))
+        taskLock.unlock()
+        stopLoading(for: schemeTask)
+    }
+
+    // This method is called when a request with the custom scheme is made
+    func startLoading(for schemeTask: WKURLSchemeTask) {
+        guard let request = schemeTask.request as URLRequest?,
+              let url = request.url else {
+            let error = error(code: 400, description: "Invalid request")
+            if isTaskActive(schemeTask) {
+                schemeTask.didFailWithError(error)
+                removeTask(schemeTask)
+            }
+            return
+        }
+
+        // Extract request data
+        extractRequestData(from: request) { [weak self] result in
+            guard let self = self, self.isTaskActive(schemeTask) else { return }
+
+            switch result {
+            case .success(let requestData):
+                if url.path == Self.formStashPath {
+                    self.stashFormBody(requestData, url: url, schemeTask: schemeTask)
+                    return
+                }
+
+                let pathComponents = url.pathComponents
+
+                if let assetsIndex = pathComponents.firstIndex(of: "_assets") {
+                    // Gather everything after "_assets":
+                    let subComponents = pathComponents[(assetsIndex + 1)...]
+
+                    // Join them back together: "build/app.js"
+                    let relativeAssetPath = subComponents.joined(separator: "/")
+
+                    // Attempt to find this file in Documents/app/public
+                    let appPath = AppUpdateManager.shared.getAppPath()
+                    let localPath = appPath + "/public/" + relativeAssetPath
+
+                    // Confine the resolved path to public/. The components come
+                    // from the request URL, and a `..` smuggled through (e.g.
+                    // `/_assets/..%2f.env`, which WebKit leaves as a `..`
+                    // component) would otherwise walk `localPath` out of public/
+                    // and hand back any file the app process can read — `.env`,
+                    // the SQLite database, PHP source. Resolve symlinks and `..`
+                    // on both the target and the public root, then require the
+                    // target to stay inside the root. A miss falls through to
+                    // PHP, which 404s, exactly like any other unknown asset.
+                    let publicRoot = URL(fileURLWithPath: appPath + "/public")
+                        .resolvingSymlinksInPath().standardizedFileURL.path
+                    let resolvedPath = URL(fileURLWithPath: localPath)
+                        .resolvingSymlinksInPath().standardizedFileURL.path
+                    let withinPublic = resolvedPath == publicRoot
+                        || resolvedPath.hasPrefix(publicRoot + "/")
+
+                    if !withinPublic {
+                        print("⚠️ Refused asset outside public/: \(relativeAssetPath)")
+                    }
+
+                    if withinPublic, FileManager.default.fileExists(atPath: localPath) {
+
+                        do {
+                            let fileURL = URL(fileURLWithPath: localPath)
+                            let fileAttributes = try FileManager.default.attributesOfItem(atPath: localPath)
+                            let fileSize = fileAttributes[.size] as? Int64 ?? 0
+
+                            let mimeType = self.guessMimeType(for: relativeAssetPath)
+
+                            // Check if this is a range request
+                            let rangeHeader = requestData.headers["Range"] ?? requestData.headers["range"]
+
+                            if let rangeHeader = rangeHeader, rangeHeader.hasPrefix("bytes=") {
+                                // Handle byte-range request for streaming
+                                let rangeString = rangeHeader.replacingOccurrences(of: "bytes=", with: "")
+                                let rangeParts = rangeString.split(separator: "-")
+
+                                if rangeParts.count == 2 {
+                                    let start = Int64(rangeParts[0]) ?? 0
+                                    let end = rangeParts[1].isEmpty ? fileSize - 1 : (Int64(rangeParts[1]) ?? fileSize - 1)
+                                    let length = end - start + 1
+
+                                    // Read only the requested byte range
+                                    guard let fileHandle = FileHandle(forReadingAtPath: localPath) else {
+                                        throw NSError(domain: "PHPSchemeHandler", code: 500, userInfo: [NSLocalizedDescriptionKey: "Could not open file"])
+                                    }
+
+                                    if #available(iOS 13.0, *) {
+                                        try fileHandle.seek(toOffset: UInt64(start))
+                                        let data = fileHandle.readData(ofLength: Int(length))
+                                        try fileHandle.close()
+
+                                        let headers: [String: String] = [
+                                            "Content-Type": mimeType,
+                                            "Content-Length": "\(data.count)",
+                                            "Content-Range": "bytes \(start)-\(end)/\(fileSize)",
+                                            "Accept-Ranges": "bytes"
+                                        ]
+
+                                        let response = HTTPURLResponse(url: url,
+                                                                       statusCode: 206, // Partial Content
+                                                                       httpVersion: "HTTP/1.1",
+                                                                       headerFields: headers)
+
+                                        if self.isTaskActive(schemeTask) {
+                                            schemeTask.didReceive(response!)
+                                            schemeTask.didReceive(data)
+                                            schemeTask.didFinish()
+                                            self.removeTask(schemeTask)
+                                        }
+                                    }
+
+                                    return
+                                }
+                            }
+
+                            // For large files (>10MB), use streaming via InputStream
+                            // For small files, load into memory for better performance
+                            if fileSize > 10_000_000 {
+                                // Large file - stream it in 1MB chunks (local disk is fast)
+                                guard let inputStream = InputStream(url: fileURL) else {
+                                    throw NSError(domain: "PHPSchemeHandler", code: 500, userInfo: [NSLocalizedDescriptionKey: "Could not create input stream"])
+                                }
+
+                                let headers: [String: String] = [
+                                    "Content-Type": mimeType,
+                                    "Content-Length": "\(fileSize)",
+                                    "Accept-Ranges": "bytes"
+                                ]
+
+                                let response = HTTPURLResponse(url: url,
+                                                               statusCode: 200,
+                                                               httpVersion: "HTTP/1.1",
+                                                               headerFields: headers)
+
+                                if self.isTaskActive(schemeTask) {
+                                    schemeTask.didReceive(response!)
+
+                                    // Stream file in 1MB chunks (local disk, no network latency)
+                                    inputStream.open()
+                                    let bufferSize = 1024 * 1024 // 1MB chunks
+                                    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+                                    defer {
+                                        buffer.deallocate()
+                                        inputStream.close()
+                                    }
+
+                                    while inputStream.hasBytesAvailable && self.isTaskActive(schemeTask) {
+                                        let bytesRead = inputStream.read(buffer, maxLength: bufferSize)
+                                        if bytesRead > 0 {
+                                            let data = Data(bytes: buffer, count: bytesRead)
+                                            schemeTask.didReceive(data)
+                                        } else if bytesRead < 0 {
+                                            // Error occurred
+                                            break
+                                        }
+                                    }
+
+                                    if self.isTaskActive(schemeTask) {
+                                        schemeTask.didFinish()
+                                        self.removeTask(schemeTask)
+                                    }
+                                }
+                            } else {
+                                // Small file - load into memory for best performance
+                                let fileData = try Data(contentsOf: fileURL)
+
+                                let headers: [String: String] = [
+                                    "Content-Type": mimeType,
+                                    "Content-Length": "\(fileData.count)",
+                                    "Accept-Ranges": "bytes"
+                                ]
+
+                                let response = HTTPURLResponse(url: url,
+                                                               statusCode: 200,
+                                                               httpVersion: "HTTP/1.1",
+                                                               headerFields: headers)
+
+                                if self.isTaskActive(schemeTask) {
+                                    schemeTask.didReceive(response!)
+                                    schemeTask.didReceive(fileData)
+                                    schemeTask.didFinish()
+                                    self.removeTask(schemeTask)
+                                }
+                            }
+
+                            return
+                        } catch {
+                            // Just fall back to PHP
+                            print("⚠️ Error serving asset: \(error.localizedDescription)")
+                        }
+                    }
+                }
+
+                WebView.dataStore.httpCookieStore.getAllCookies { cookies in
+                    guard self.isTaskActive(schemeTask) else { return }
+
+                    var request = requestData
+
+                    let domainCookies = cookies.filter { $0.domain == "127.0.0.1" }
+
+                    var csrfToken: String = "";
+
+                    // Build "Cookie" header
+                    let cookieHeader = domainCookies.map {
+                        if ($0.name == "XSRF-TOKEN") {
+                            csrfToken = $0.value.removingPercentEncoding ?? ""
+                        }
+
+                        return "\($0.name)=\($0.value.removingPercentEncoding ?? "")"
+                    }.joined(separator: "; ")
+
+                    request.headers["Cookie"] = cookieHeader
+                    request.headers["X-XSRF-TOKEN"] = csrfToken
+
+                    self.forwardToPHP(requestData: request, schemeTask: schemeTask, redirectCount: 0)
+                }
+
+            case .failure(let error):
+                // Pass the extraction error back to the scheme task
+                if self.isTaskActive(schemeTask) {
+                    schemeTask.didFailWithError(error)
+                    self.removeTask(schemeTask)
+                }
+            }
+        }
+    }
+
+    func stopLoading(for schemeTask: WKURLSchemeTask) {
+        // Cancel any ongoing operations for this task
+        print("Canceling scheme task: \(schemeTask)")
+    }
+
+    private func isTaskActive(_ schemeTask: WKURLSchemeTask) -> Bool {
+        taskLock.lock()
+        let isActive = activeTasks[ObjectIdentifier(schemeTask)] != nil
+        taskLock.unlock()
+        return isActive
+    }
+
+    private func removeTask(_ schemeTask: WKURLSchemeTask) {
+        taskLock.lock()
+        activeTasks.removeValue(forKey: ObjectIdentifier(schemeTask))
+        taskLock.unlock()
+    }
+
+    private func guessMimeType(for fileName: String) -> String {
+        let pathExtension = (fileName as NSString).pathExtension.lowercased()
+        switch pathExtension {
+        case "html", "htm":
+            return "text/html"
+        case "css":
+            return "text/css"
+        case "js":
+            return "application/javascript"
+        case "png":
+            return "image/png"
+        case "jpg", "jpeg":
+            return "image/jpeg"
+        case "gif":
+            return "image/gif"
+        case "webp":
+            return "image/webp"
+        case "heic":
+            return "image/heic"
+        case "heif":
+            return "image/heif"
+        case "svg":
+            return "image/svg+xml"
+        // Video — keep parity with the Android handler so plugin-staged media
+        // (and any other locally served clips) play with the correct
+        // Content-Type. WKWebView byte-sniffs in some cases, but stricter
+        // clients still need an explicit video/* type.
+        case "mp4":
+            return "video/mp4"
+        case "m4v":
+            return "video/x-m4v"
+        case "mov":
+            return "video/quicktime"
+        case "webm":
+            return "video/webm"
+        case "mkv":
+            return "video/x-matroska"
+        case "avi":
+            return "video/x-msvideo"
+        case "3gp":
+            return "video/3gpp"
+        case "m3u8":
+            return "application/vnd.apple.mpegurl"
+        case "ts":
+            return "video/mp2t"
+        // Audio
+        case "m4a":
+            return "audio/mp4"
+        case "mp3":
+            return "audio/mpeg"
+        case "wav":
+            return "audio/wav"
+        case "aac":
+            return "audio/aac"
+        case "ogg":
+            return "audio/ogg"
+        default:
+            return "application/octet-stream"
+        }
+    }
+
+    // Helper method to extract request data
+    private func extractRequestData(from request: URLRequest,
+                                    completion: @escaping (Result<RequestData, Error>) -> Void) {
+        guard request.url?.host == domain else {
+            // If the domain doesn't match, don't do anything
+            print("⚠ Domain doesn't match expected!")
+            print(request.url?.host ?? "")
+            return
+        }
+
+        // Extract URI + query with percent-encoding preserved. PHP consumes them
+        // verbatim as $_SERVER['REQUEST_URI'] / $_SERVER['QUERY_STRING'], so they
+        // must match what a real HTTP server would set — same shape Android
+        // produces via Uri.encodedPath. Using .path / .query would decode once
+        // and corrupt paths containing reserved chars ('/', '+', '$', '*') or
+        // literal '%' from the data.
+        var uri = "/"
+        var query: String?
+        if let url = request.url {
+            let urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            uri = urlComponents?.percentEncodedPath ?? "/"
+            query = urlComponents?.percentEncodedQuery
+        }
+
+        // Extract HTTP method
+        let method = request.httpMethod ?? "GET"
+
+        // Extract Headers
+        var headers = request.allHTTPHeaderFields ?? [:]
+
+        // A request body arrives either whole or as a stream. WKWebView streams it
+        // whenever the sender watches upload progress, as every axios call does.
+        // Reading the stream back is the only way those bodies reach PHP. The
+        // body stays bytes from here to php://input: never decoded as text.
+        var body: Data?
+        if !["GET", "HEAD"].contains(method.uppercased()) {
+            if let httpBody = request.httpBody {
+                body = httpBody
+            } else if let stream = request.httpBodyStream {
+                stream.open()
+                defer { stream.close() }
+
+                var bodyData = Data()
+                bodyData.reserveCapacity(Int(headers["Content-Length"] ?? "") ?? 0)
+
+                let bufferSize = 65536
+                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+                defer { buffer.deallocate() }
+
+                // Read until the stream reports its end (0) or an error (< 0).
+                // hasBytesAvailable can be false before the end is reached.
+                while true {
+                    let bytesRead = stream.read(buffer, maxLength: bufferSize)
+                    if bytesRead <= 0 {
+                        break
+                    }
+                    bodyData.append(buffer, count: bytesRead)
+                }
+
+                if !bodyData.isEmpty {
+                    body = bodyData
+                }
+            }
+
+            // WebKit drops the body of a multipart <form> navigation that
+            // carries a file (WebKit bug 197237). The page's shim posted the
+            // serialized form here just before submitting, so use that body
+            // and its Content-Type, whose boundary matches it.
+            if body == nil,
+               method.uppercased() == "POST",
+               let navigationType = headers.first(where: { $0.key.caseInsensitiveCompare("Content-Type") == .orderedSame })?.value,
+               navigationType.lowercased().hasPrefix("multipart/form-data"),
+               let url = request.url,
+               let stashed = takeStashedFormBody(for: url) {
+                body = stashed.body
+                for key in headers.keys where key.caseInsensitiveCompare("Content-Type") == .orderedSame {
+                    headers.removeValue(forKey: key)
+                }
+                headers["Content-Type"] = stashed.contentType
+            }
+        }
+
+        // Create a RequestData object
+        let requestData = RequestData(
+            method: method,
+            uri: uri,
+            data: nil,
+            query: query ?? "",
+            headers: headers,
+            body: body
+        )
+
+        // Pass the extracted data back via completion
+        completion(.success(requestData))
+    }
+
+    private func parseSetCookieHeader(cookieString: String) -> [HTTPCookiePropertyKey: Any] {
+        var properties: [HTTPCookiePropertyKey: Any] = [:]
+
+        // Split the cookie string into components separated by ';'
+        let components = cookieString.split(separator: ";")
+
+        // The first component is "name=value"
+        if let nameValue = components.first {
+            let nv = nameValue.split(separator: "=", maxSplits: 1)
+            if nv.count == 2 {
+                let name = String(nv[0])
+                let value = String(nv[1])
+                properties[.name] = name
+                properties[.value] = value
+            }
+        }
+
+        // The remaining components are attributes
+        for attribute in components.dropFirst() {
+            let attr = attribute.trimmingCharacters(in: .whitespacesAndNewlines)
+            let pair = attr.split(separator: "=", maxSplits: 1)
+            if pair.count == 2 {
+                let key = String(pair[0]).lowercased()
+                let value = String(pair[1])
+                switch key {
+                case "path":
+                    properties[.path] = value
+                case "domain":
+                    properties[.domain] = value
+                case "expires":
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+                    dateFormatter.dateFormat = "E, d MMM yyyy HH:mm:ss z"
+                    if let date = dateFormatter.date(from: value) {
+                        properties[.expires] = date
+                    }
+                case "httponly":
+                    if #available(iOS 18.2, *) {
+                        properties[.setByJavaScript] = false
+                    } else {
+                        // Fallback on earlier versions
+                    }
+                case "secure":
+                    properties[.secure] = true
+                default:
+                    break
+                }
+            } else {
+                // Attributes like 'HttpOnly' or 'Secure' without value
+                let key = String(pair[0]).lowercased()
+                if key == "httponly" {
+                    if #available(iOS 18.2, *) {
+                        properties[.setByJavaScript] = false
+                    } else {
+                        // Fallback on earlier versions
+                    }
+                } else if key == "secure" {
+                    properties[.secure] = true
+                }
+            }
+        }
+
+        // Set the domain and path if not already set
+        if properties[.domain] == nil {
+            properties[.domain] = domain
+        }
+
+        if properties[.path] == nil {
+            properties[.path] = "/"
+        }
+
+        return properties
+    }
+
+    /// Exit-envelope handling for a native session whose scheme task was
+    /// cancelled (app backgrounded mid-session). Mirrors the boot-path
+    /// handling in NativePHPApp.handleNativeSessionExit.
+    private func handleOrphanedNativeExit(_ raw: String) {
+        let head = raw.components(separatedBy: "\r\n\r\n").first ?? raw
+        let lines = head.components(separatedBy: "\r\n")
+        let status = lines.first?
+            .components(separatedBy: " ")
+            .dropFirst().first.flatMap { Int($0) } ?? 200
+        guard (300...399).contains(status),
+              let loc = lines
+                  .first(where: { $0.lowercased().hasPrefix("location:") })?
+                  .components(separatedBy: ":").dropFirst().joined(separator: ":")
+                  .trimmingCharacters(in: .whitespaces),
+              !loc.isEmpty
+        else { return }
+
+        // Keep the query, and keep the path percent-encoded, as handleNativeSessionExit does.
+        let path = (loc.hasPrefix("http") || loc.hasPrefix("php:"))
+            ? (URL(string: loc).map { url in url.path(percentEncoded: true) + (url.query.map { "?" + $0 } ?? "") } ?? "/")
+            : loc
+
+        DispatchQueue.main.async {
+            NSLog("%@", "[NativeBoot] ⇄ orphaned EXIT_WEB → \(path) (scheme task was cancelled)")
+            if SharedWebView.shared.webView != nil {
+                // WebView exists (detached while native was active): load the
+                // destination into it, then unmount the native branch so it
+                // remounts showing the page.
+                NotificationCenter.default.post(
+                    name: .redirectToURLNotification,
+                    object: nil,
+                    userInfo: ["url": "php://127.0.0.1\(path)"]
+                )
+            } else {
+                // Never created (native-direct boot): create lazily with the
+                // destination pending.
+                BootState.shared.allowWebView(loading: path)
+            }
+            NativeUIBridge.shared.isActive = false
+            AppState.shared.markInitialized()
+        }
+    }
+
+    // MARK: - Multipart form bodies (WebKit bug 197237)
+
+    /// Path the page shim (`ContentView.bodyShimScript`) posts a serialized
+    /// multipart form to, just before it submits the form for real. WebKit
+    /// drops the body of a multipart navigation that carries a file, so the
+    /// navigation that follows picks this body up again. Answered here; it
+    /// never reaches PHP.
+    static let formStashPath = "/_native/form-body"
+
+    private struct StashedFormBody {
+        let body: Data
+        let contentType: String
+        let storedAt: Date
+    }
+
+    private static let stashLifetime: TimeInterval = 30
+    private static let stashLimit = 8
+    private var stashedFormBodies: [String: StashedFormBody] = [:]
+    private let stashLock = NSLock()
+
+    private func stashFormBody(_ requestData: RequestData, url: URL, schemeTask: WKURLSchemeTask) {
+        var status = 400
+
+        // The custom header keeps other origins out: they can't send it
+        // without a CORS preflight, which this handler never grants.
+        if requestData.method.uppercased() == "POST",
+           requestData.header("X-NativePHP-Form-Stash") == "1",
+           let action = requestData.header("X-NativePHP-Form-Action"),
+           let actionURL = URL(string: action),
+           actionURL.host == domain,
+           let contentType = requestData.header("Content-Type"),
+           contentType.lowercased().hasPrefix("multipart/form-data"),
+           let body = requestData.body, !body.isEmpty {
+            let now = Date()
+            stashLock.lock()
+            stashedFormBodies = stashedFormBodies.filter { now.timeIntervalSince($0.value.storedAt) < Self.stashLifetime }
+            if stashedFormBodies.count >= Self.stashLimit,
+               let oldest = stashedFormBodies.min(by: { $0.value.storedAt < $1.value.storedAt })?.key {
+                stashedFormBodies.removeValue(forKey: oldest)
+            }
+            stashedFormBodies[Self.stashKey(for: actionURL)] = StashedFormBody(body: body, contentType: contentType, storedAt: now)
+            stashLock.unlock()
+            status = 204
+        }
+
+        guard isTaskActive(schemeTask),
+              let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
+                                             headerFields: ["Content-Length": "0", "Cache-Control": "no-store"]) else {
+            return
+        }
+        schemeTask.didReceive(response)
+        schemeTask.didFinish()
+        removeTask(schemeTask)
+    }
+
+    private func takeStashedFormBody(for url: URL) -> StashedFormBody? {
+        stashLock.lock()
+        defer { stashLock.unlock() }
+
+        guard let entry = stashedFormBodies.removeValue(forKey: Self.stashKey(for: url)),
+              Date().timeIntervalSince(entry.storedAt) < Self.stashLifetime else {
+            return nil
+        }
+        return entry
+    }
+
+    private static func stashKey(for url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        return components?.string ?? url.absoluteString
+    }
+
+    private func error(code: Int, description: String) -> NSError
+    {
+        print("ERROR: \(description)")
+        return NSError(domain: "PHPAppSchemeHandler", code: code, userInfo: [NSLocalizedDescriptionKey: description])
+    }
+
+    // Laravel writes absolute redirect URLs, so a hop back into the app arrives
+    // as php://127.0.0.1/path?query. PHP needs those split apart, with
+    // percent-encoding intact, the way extractRequestData does.
+    private func internalRedirectTarget(for location: String) -> (uri: String, query: String?)? {
+        guard let components = URLComponents(string: location),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "php" || scheme == "http",
+              components.host == domain else {
+            return nil
+        }
+
+        let path = components.percentEncodedPath
+
+        return (path.isEmpty ? "/" : path, components.percentEncodedQuery)
+    }
+
+    private func forwardToPHP(requestData: RequestData, schemeTask: WKURLSchemeTask, redirectCount: Int = 0) {
+        getResponse(request: requestData) { result in
+            guard self.isTaskActive(schemeTask) else {
+                // WebKit cancels in-flight scheme tasks when the app
+                // backgrounds — but a Route::native request IS the native
+                // session, which keeps running and eventually returns its
+                // exit envelope. If that lands after the task died, honor
+                // an EXIT_WEB anyway or the user is stranded on a frozen
+                // native screen with a runloop that no longer exists.
+                //
+                // An embedded php-mode webview never carries a native
+                // session. Its cancelled request (the user navigated on, or
+                // the screen holding it closed) is just a page load, and a
+                // redirect from it must not move the whole app to the web.
+                if self.dedicatedRuntime == nil,
+                   case .success(let data) = result,
+                   let parsed = PHPRawResponse(data) {
+                    self.handleOrphanedNativeExit(parsed.head)
+                }
+                return
+            }
+
+            switch result {
+            case .success(let responseData):
+                // Split once, at the first blank line, on bytes. The head is
+                // text; the body stays exactly the bytes PHP echoed.
+                guard let parsed = PHPRawResponse(responseData) else {
+                    // Not a raw HTTP response: a PHP fatal error, or a bridge
+                    // failure before PHP answered. Show it as a 500.
+                    print("Invalid PHP response format (\(responseData.count) bytes)")
+                    let url = schemeTask.request.url ?? URL(string: "php://\(self.domain)/")!
+                    guard let httpResponse = HTTPURLResponse(url: url,
+                                                             statusCode: 500,
+                                                             httpVersion: "HTTP/1.1",
+                                                             headerFields: [
+                                                                "Content-Type": "text/plain; charset=utf-8",
+                                                                "Content-Length": "\(responseData.count)"
+                                                             ]) else {
+                        let error = self.error(code: 500, description: "Failed to create HTTP response")
+                        if self.isTaskActive(schemeTask) {
+                            schemeTask.didFailWithError(error)
+                            self.removeTask(schemeTask)
+                        }
+                        return
+                    }
+
+                    if self.isTaskActive(schemeTask) {
+                        schemeTask.didReceive(httpResponse)
+                        schemeTask.didReceive(responseData)
+                        schemeTask.didFinish()
+                        self.removeTask(schemeTask)
+                    }
+
+                    return
+                }
+
+                let headers = parsed.headers
+                let statusCode = parsed.statusCode
+
+                var request = requestData
+                if let location = headers["location"] {
+                    let trimmedLocation = location.trimmingCharacters(in: .whitespaces)
+                    // Follow as a GET, without the original request's body.
+                    request.method = "GET"
+                    request.data = nil
+                    request.body = nil
+                    request.removeHeader("Content-Type")
+                    request.removeHeader("Content-Length")
+
+                    // Anything not aimed back at our own host is a navigation the
+                    // webview owns, so hand it over rather than asking PHP to
+                    // route a URL that was never one of its paths.
+                    guard let target = self.internalRedirectTarget(for: trimmedLocation) else {
+                        let absoluteURL = trimmedLocation.hasPrefix("/")
+                            ? "php://\(self.domain)\(trimmedLocation)"
+                            : trimmedLocation
+
+                        // The notification drives the root webview. An embedded
+                        // webview loads the URL itself, the way redirectToURL
+                        // does for the root one, and its own navigation
+                        // delegate decides what happens to it.
+                        if self.dedicatedRuntime != nil {
+                            DispatchQueue.main.async { [weak self] in
+                                guard let webView = self?.embeddedWebView,
+                                      let url = URL(string: absoluteURL) else { return }
+                                if webView.isLoading {
+                                    webView.stopLoading()
+                                }
+                                webView.load(URLRequest(url: url))
+                            }
+                            return
+                        }
+
+                        NotificationCenter.default.post(name: .redirectToURLNotification, object: nil, userInfo: ["url": absoluteURL])
+                        return
+                    }
+
+                    request.uri = target.uri
+                    request.query = target.query
+
+                    WebView.dataStore.httpCookieStore.getAllCookies { cookies in
+                        guard self.isTaskActive(schemeTask) else { return }
+
+                        let domainCookies = cookies.filter { $0.domain == "127.0.0.1" }
+
+                        // Build "Cookie" header
+                        let cookieHeader = domainCookies.map {
+                            return "\($0.name)=\($0.value.removingPercentEncoding ?? "")"
+                        }.joined(separator: "; ")
+
+                        request.headers["Cookie"] = cookieHeader
+
+                        let newRedirectCount = redirectCount + 1
+
+                        if newRedirectCount > self.maxRedirects {
+                            let error = self.error(code: 500, description: "Too Many Redirects")
+                            if self.isTaskActive(schemeTask) {
+                                schemeTask.didFailWithError(error)
+                                self.removeTask(schemeTask)
+                            }
+                            return
+                        }
+
+                        self.forwardToPHP(requestData: request, schemeTask: schemeTask, redirectCount: newRedirectCount)
+                    }
+
+                    return
+                }
+
+                print("Forwarding response to WebView")
+
+                guard let httpResponse = HTTPURLResponse(url: (URL(string: requestData.uri) ?? URL(string: "/"))!,
+                                                        statusCode: statusCode,
+                                                        httpVersion: "HTTP/1.1",
+                                                        headerFields: headers) else {
+                    let error = self.error(code: 500, description: "Failed to create HTTP response")
+                    if self.isTaskActive(schemeTask) {
+                        schemeTask.didFailWithError(error)
+                    }
+                    return
+                }
+
+                // Send the response to the task
+                if self.isTaskActive(schemeTask) {
+                    schemeTask.didReceive(httpResponse)
+
+                    // Send the body bytes exactly as PHP produced them
+                    schemeTask.didReceive(parsed.body)
+
+                    // Indicate that the task has finished
+                    schemeTask.didFinish()
+                    self.removeTask(schemeTask)
+                    print("Done")
+                }
+
+            case .failure(let error):
+                // Handle failure by sending the error to the task
+                if self.isTaskActive(schemeTask) {
+                    schemeTask.didFailWithError(error)
+                    self.removeTask(schemeTask)
+                }
+            }
+        }
+    }
+
+    /// Push a raw response's Set-Cookie headers into the shared WebView
+    /// cookie store. Only the head is read; the body is never decoded.
+    /// Calls `then` on the main queue once the cookies have been handed over.
+    private func storeSetCookies(from rawResponse: Data, then: (() -> Void)? = nil) {
+        let setCookieHeaders = PHPRawResponse(rawResponse)?.setCookies ?? []
+
+        DispatchQueue.main.async {
+            for header in setCookieHeaders {
+                let cookieString = header
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: ";\\s+", with: ";", options: .regularExpression)
+
+                if let cookie = HTTPCookie(properties: self.parseSetCookieHeader(cookieString: cookieString)) {
+                    WebView.dataStore.httpCookieStore.setCookie(cookie)
+                }
+            }
+            then?()
+        }
+    }
+
+    private func getResponse(request: RequestData,
+                              completion: @escaping (Result<Data, Error>) -> Void) {
+        // Embedded php-mode webview — serve on its own dedicated PHP context.
+        if let dedicated = dedicatedRuntime {
+            dedicated.dispatchData(request: request) { [weak self] response in
+                guard let self else { return }
+                self.storeSetCookies(from: response)
+                completion(.success(response))
+            }
+            return
+        }
+
+        // PROTOTYPE: in a Jump WebView session, forward to the remote dev server
+        // instead of the local embedded PHP. The WebView still believes it is
+        // loading php://127.0.0.1, so no origin/ATS/nav-policy change is needed.
+        if JumpWebViewSession.shared.isActive {
+            forwardToRemote(request: request, completion: completion)
+            return
+        }
+
+        // Execute on dedicated PHP thread (same thread as php_embed_init for ZTS compatibility)
+        PersistentPHPRuntime.shared.executeOnPHPThreadAsync {
+            let mode = PersistentPHPRuntime.shared.isBooted ? "PERSISTENT" : "CLASSIC"
+            let start = CFAbsoluteTimeGetCurrent()
+            NSLog("%@", "[NativePHP] [\(mode)] --> \(request.method) \(request.uri)")
+
+            let response: Data
+            if PersistentPHPRuntime.shared.isBooted {
+                // Persistent mode — dispatch through booted Laravel kernel
+                response = PersistentPHPRuntime.shared.dispatchData(request: request)
+            } else {
+                // Classic per-request mode (configured, or persistent boot failed)
+                response = NativePHPApp.laravelData(request: request) ?? Data("No response from Laravel".utf8)
+            }
+
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+            NSLog("%@", "[NativePHP] [\(mode)] <-- \(PHPRawResponse.statusLine(of: response)) (\(String(format: "%.1f", elapsed))ms)")
+
+            self.storeSetCookies(from: response) {
+                completion(.success(response))
+            }
+        }
+    }
+
+    /// PROTOTYPE forward: proxy a php://127.0.0.1 request to the remote Jump dev
+    /// server over the LAN and return the response in the same raw-HTTP-string
+    /// format `getResponse` produces, so `forwardToPHP` parses it unchanged.
+    ///
+    /// v0 limitations (follow-ups): body is treated as UTF-8, so text responses
+    /// (HTML / Livewire / CSS / JS) work but binary assets (fonts / images) do
+    /// not yet; only the app route + text assets render. Remote Set-Cookies are
+    /// rebound to 127.0.0.1 so Livewire sessions/CSRF persist across forwards.
+    private func forwardToRemote(request: RequestData,
+                                 completion: @escaping (Result<Data, Error>) -> Void) {
+        let host = JumpWebViewSession.shared.host
+        let port = JumpWebViewSession.shared.port
+
+        var urlString = "http://\(host):\(port)\(request.uri)"
+        if let q = request.query, !q.isEmpty {
+            urlString += "?\(q)"
+        }
+        guard let url = URL(string: urlString) else {
+            completion(.failure(error(code: 400, description: "Bad remote URL \(urlString)")))
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = request.method
+        req.timeoutInterval = 15
+        // Copy client headers; drop hop-by-hop / length headers URLSession owns.
+        for (key, value) in request.headers {
+            let lk = key.lowercased()
+            if lk == "host" || lk == "content-length" { continue }
+            req.setValue(value, forHTTPHeaderField: key)
+        }
+        if let body = request.bodyBytes, !body.isEmpty {
+            req.httpBody = body
+        }
+
+        NSLog("%@", "[NativePHP] [JUMP-WEBVIEW] --> \(request.method) \(urlString)")
+
+        PHPSchemeHandler.forwardSession.dataTask(with: req) { data, response, err in
+            if let err = err {
+                completion(.failure(err))
+                return
+            }
+            guard let http = response as? HTTPURLResponse, let data = data else {
+                completion(.failure(self.error(code: 502, description: "No response from remote dev server")))
+                return
+            }
+
+            NSLog("%@", "[NativePHP] [JUMP-WEBVIEW] <-- \(http.statusCode) \(data.count) bytes")
+
+            // Flatten headers to [String:String] for cookie parsing + rebuild.
+            var headerFields: [String: String] = [:]
+            for (k, v) in http.allHeaderFields {
+                headerFields["\(k)"] = "\(v)"
+            }
+
+            // Rebind remote Set-Cookies to 127.0.0.1 and put them in the WebView
+            // store, matching the local path's behaviour.
+            let remoteCookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url)
+            if !remoteCookies.isEmpty {
+                DispatchQueue.main.async {
+                    for c in remoteCookies {
+                        var props = c.properties ?? [:]
+                        props[.domain] = "127.0.0.1"
+                        if let rebound = HTTPCookie(properties: props) {
+                            WebView.dataStore.httpCookieStore.setCookie(rebound)
+                        }
+                    }
+                }
+            }
+
+            // Rebuild the raw HTTP string forwardToPHP expects:
+            // "<status line>\r\n<header lines>\r\n\r\n<body>".
+            var head = "HTTP/1.1 \(http.statusCode) \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))\r\n"
+            for (k, v) in headerFields {
+                let lk = k.lowercased()
+                // Drop headers the WebView recomputes or that would corrupt the
+                // string body (we already decoded/te-decoded the payload).
+                if lk == "content-length" || lk == "transfer-encoding" || lk == "content-encoding" {
+                    continue
+                }
+                head += "\(k): \(v)\r\n"
+            }
+
+            var bodyString = String(data: data, encoding: .utf8) ?? ""
+
+            // Rewrite absolute dev-server URLs to relative so EVERY app request —
+            // navigations, assets, and crucially Livewire `wire:click` XHRs — stays
+            // same-origin under php://127.0.0.1 and routes through this scheme
+            // handler. Otherwise the app's absolute URLs (http://host:port/…) make
+            // fetch() go cross-origin, which bypasses the forward and gets
+            // CORS-blocked — the reason button-triggered native calls (Camera, etc.)
+            // silently did nothing while page-load calls worked.
+            let origin = "\(host):\(port)"
+            bodyString = bodyString
+                .replacingOccurrences(of: "http://\(origin)", with: "")
+                .replacingOccurrences(of: "https://\(origin)", with: "")
+
+            let full = head + "\r\n" + bodyString
+            completion(.success(Data(full.utf8)))
+        }.resume()
+    }
+}
+
+struct RequestData {
+    var method: String
+    var uri: String
+    /// Text body, for requests built by plugins. The scheme handler leaves
+    /// it nil and fills `body` instead.
+    var data: String?
+    var query: String?
+    var headers: [String: String]
+    /// Request body, byte for byte. Takes precedence over `data`.
+    var body: Data? = nil
+
+    /// The body to send to PHP: `body`, or `data` as UTF-8 for requests that
+    /// only set the text form.
+    var bodyBytes: Data? {
+        body ?? data.map { Data($0.utf8) }
+    }
+
+    /// Header value, looked up without regard to case.
+    func header(_ name: String) -> String? {
+        if let exact = headers[name] { return exact }
+        return headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+
+    /// Remove a header, whatever its case.
+    mutating func removeHeader(_ name: String) {
+        for key in headers.keys where key.caseInsensitiveCompare(name) == .orderedSame {
+            headers.removeValue(forKey: key)
+        }
+    }
+
+    /// Request headers as the block BridgeDispatcher::handle() takes:
+    /// "Name: value" lines joined by CRLF, UTF-8. A header whose name or
+    /// value holds a CR or LF would break the framing and is left out.
+    var headerBlock: Data {
+        let lines = headers.compactMap { name, value -> String? in
+            if name.isEmpty || name.contains(where: { $0 == "\r" || $0 == "\n" || $0 == ":" })
+                || value.contains(where: { $0 == "\r" || $0 == "\n" }) {
+                return nil
+            }
+            return "\(name): \(value)"
+        }
+        return Data(lines.joined(separator: "\r\n").utf8)
+    }
+}
+
+/// A raw HTTP/1.1 response as the PHP bridge returns it: status line, header
+/// lines, a blank line, then the body. Split once, at the first CRLF CRLF,
+/// on bytes: the head is decoded as text (lossily, so it never fails) and
+/// the body stays exactly the bytes PHP echoed, NULs and blank lines included.
+struct PHPRawResponse {
+    let statusCode: Int
+    /// Status line and header lines, without the terminating blank line.
+    let head: String
+    /// Header fields keyed by lower-cased name. A repeated header keeps its
+    /// last value.
+    let headers: [String: String]
+    /// Every Set-Cookie value, in order.
+    let setCookies: [String]
+    let body: Data
+
+    private static let headTerminator = Data("\r\n\r\n".utf8)
+
+    /// Nil when the bytes aren't a raw HTTP response (no status line, or no
+    /// blank line after the headers), e.g. a PHP fatal error.
+    init?(_ data: Data) {
+        guard data.starts(with: Data("HTTP/".utf8)),
+              let split = data.range(of: Self.headTerminator) else {
+            return nil
+        }
+
+        head = String(decoding: data[data.startIndex..<split.lowerBound], as: UTF8.self)
+        body = Data(data[split.upperBound...])
+
+        let lines = head.components(separatedBy: "\r\n")
+        let statusParts = (lines.first ?? "").split(separator: " ")
+        statusCode = statusParts.count > 1 ? (Int(statusParts[1]) ?? 200) : 200
+
+        var headers: [String: String] = [:]
+        var setCookies: [String] = []
+        for line in lines.dropFirst() {
+            // Split at the first colon only: values may hold ": " themselves.
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { continue }
+            headers[name] = value
+            if name == "set-cookie" {
+                setCookies.append(value)
+            }
+        }
+        self.headers = headers
+        self.setCookies = setCookies
+    }
+
+    /// The first line of a raw response, for logs. Never decodes the body.
+    static func statusLine(of data: Data) -> String {
+        let end = data.firstIndex(where: { $0 == 0x0D || $0 == 0x0A }) ?? data.endIndex
+        return String(decoding: data[data.startIndex..<min(end, data.startIndex + 200)], as: UTF8.self)
+    }
+}

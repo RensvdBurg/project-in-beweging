@@ -1,0 +1,120 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ikromjon\LocalNotifications\Validation;
+
+use Ikromjon\LocalNotifications\Enums\NotificationPriority;
+use Ikromjon\LocalNotifications\Support\Config;
+
+final class NotificationValidator
+{
+    /**
+     * Validate scheduling options for mutual exclusivity and constraints.
+     *
+     * @param  array<string, mixed>  $options
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function validate(array $options): void
+    {
+        if (isset($options['id']) && is_string($options['id'])
+            && (str_ends_with($options['id'], '_snooze') || preg_match('/_day_[1-7]$/', $options['id']) === 1)
+        ) {
+            throw new \InvalidArgumentException(
+                'Notification id must not end with "_snooze" or "_day_{1-7}" — these suffixes are reserved for internal sub-notifications (snooze and day-of-week alarms).',
+            );
+        }
+
+        $hasRepeat = isset($options['repeat']);
+        $hasRepeatIntervalSeconds = isset($options['repeatIntervalSeconds']);
+        $hasRepeatDays = isset($options['repeatDays']);
+        $hasRepeatCount = isset($options['repeatCount']);
+
+        if ($hasRepeat && $hasRepeatIntervalSeconds) {
+            throw new \InvalidArgumentException(
+                'Cannot use both "repeat" and "repeatIntervalSeconds". Choose one.',
+            );
+        }
+
+        $minInterval = max(1, (int) Config::get('min_repeat_interval_seconds', 60));
+
+        if ($hasRepeatIntervalSeconds && $options['repeatIntervalSeconds'] < $minInterval) {
+            throw new \InvalidArgumentException(
+                "repeatIntervalSeconds must be at least {$minInterval} seconds.",
+            );
+        }
+
+        if ($hasRepeatDays) {
+            if ($hasRepeat || $hasRepeatIntervalSeconds) {
+                throw new \InvalidArgumentException(
+                    'Cannot use "repeatDays" with "repeat" or "repeatIntervalSeconds".',
+                );
+            }
+
+            if (! isset($options['at'])) {
+                throw new \InvalidArgumentException(
+                    '"repeatDays" requires "at" to determine the time of day.',
+                );
+            }
+
+            foreach ($options['repeatDays'] as $day) {
+                if ($day < 1 || $day > 7) {
+                    throw new \InvalidArgumentException(
+                        'Each value in "repeatDays" must be between 1 (Monday) and 7 (Sunday).',
+                    );
+                }
+            }
+        }
+
+        if ($hasRepeatCount) {
+            if ($options['repeatCount'] < 1) {
+                throw new \InvalidArgumentException(
+                    'repeatCount must be at least 1.',
+                );
+            }
+
+            if (! $hasRepeat && ! $hasRepeatIntervalSeconds && ! $hasRepeatDays) {
+                throw new \InvalidArgumentException(
+                    '"repeatCount" requires a repeat mechanism ("repeat", "repeatIntervalSeconds", or "repeatDays").',
+                );
+            }
+        }
+
+        if (isset($options['soundName'])) {
+            $soundName = $options['soundName'];
+            if (! is_string($soundName) || ! preg_match('/^[\w\-]+\.\w+$/', $soundName)) {
+                throw new \InvalidArgumentException(
+                    'soundName must be a filename with extension (e.g. "alert.wav"). Only alphanumeric characters, hyphens, and underscores are allowed.',
+                );
+            }
+        }
+
+        if (isset($options['silent']) && ! is_bool($options['silent'])) {
+            // A non-bool truthy value would diverge across platforms (silent on
+            // iOS, audible on Android), so reject it outright.
+            throw new \InvalidArgumentException(
+                'silent must be a boolean.',
+            );
+        }
+
+        if (isset($options['priority'])) {
+            $validPriorities = array_column(NotificationPriority::cases(), 'value');
+            if (! in_array($options['priority'], $validPriorities, true)) {
+                throw new \InvalidArgumentException(
+                    'priority must be one of: '.implode(', ', $validPriorities).'.',
+                );
+            }
+        }
+
+        if (isset($options['actions'])) {
+            $maxActions = max(1, (int) Config::get('max_actions', 3));
+            if (is_array($options['actions']) && count($options['actions']) > $maxActions) {
+                $label = $maxActions === 1 ? 'action button' : 'action buttons';
+                throw new \InvalidArgumentException(
+                    "A notification may have at most {$maxActions} {$label}.",
+                );
+            }
+        }
+    }
+}

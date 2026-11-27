@@ -1,0 +1,66 @@
+{
+    "namespace": "Camera",
+    "bridge_functions": [
+        {
+            "name": "Camera.GetPhoto",
+            "android": "com.nativephp.camera.CameraFunctions.GetPhoto",
+            "ios": "CameraFunctions.GetPhoto",
+            "description": "Capture a photo with the device camera"
+        },
+        {
+            "name": "Camera.RecordVideo",
+            "android": "com.nativephp.camera.CameraFunctions.RecordVideo",
+            "ios": "CameraFunctions.RecordVideo",
+            "description": "Record a video with the device camera"
+        },
+        {
+            "name": "Camera.PickMedia",
+            "android": "com.nativephp.camera.GalleryFunctions.PickMedia",
+            "ios": "CameraFunctions.PickMedia",
+            "description": "Pick media from the device gallery"
+        }
+    ],
+    "android": {
+        "min_version": 26,
+        "permissions": [
+            "android.permission.CAMERA",
+            "android.permission.RECORD_AUDIO",
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_SHORT_SERVICE",
+            "android.permission.ACCESS_MEDIA_LOCATION"
+        ],
+        "dependencies": {
+            "implementation": [
+                "androidx.exifinterface:exifinterface:1.3.7"
+            ]
+        },
+        "services": [
+            {
+                "name": ".CameraForegroundService",
+                "foregroundServiceType": "shortService",
+                "exported": false
+            }
+        ]
+    },
+    "ios": {
+        "min_version": "18.2",
+        "info_plist": {
+            "NSCameraUsageDescription": "This app requires camera access to take photos and videos.",
+            "NSMicrophoneUsageDescription": "This app requires microphone access to record video with audio.",
+            "NSPhotoLibraryUsageDescription": "This app requires photo library access to select media.",
+            "NSLocationWhenInUseUsageDescription": "This app uses your location to tag photos with the place they were taken."
+        },
+        "dependencies": {
+            "swift_packages": [],
+            "pods": []
+        }
+    },
+    "events": [
+        "Native\\Mobile\\Events\\Camera\\PhotoTaken",
+        "Native\\Mobile\\Events\\Camera\\PhotoCancelled",
+        "Native\\Mobile\\Events\\Camera\\VideoRecorded",
+        "Native\\Mobile\\Events\\Camera\\VideoCancelled",
+        "Native\\Mobile\\Events\\Gallery\\MediaSelected",
+        "Native\\Mobile\\Events\\Camera\\PermissionDenied"
+    ]
+}

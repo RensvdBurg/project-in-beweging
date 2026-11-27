@@ -1,0 +1,1551 @@
+<?php
+
+namespace Native\Mobile\Commands;
+
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
+use Native\Mobile\Concerns\ChecksLatestBuildNumber;
+use Native\Mobile\Concerns\CleansEnvFile;
+use Native\Mobile\Concerns\DisplaysMarketingBanners;
+use Native\Mobile\Concerns\InstallsAppIcon;
+use Native\Mobile\Concerns\InstallsCustomIcons;
+use Native\Mobile\Concerns\InstallsSplashScreen;
+use Native\Mobile\Concerns\ValidatesAppConfig;
+use Native\Mobile\Edge\NativeRouter;
+use Native\Mobile\Exceptions\AppStoreConnectLookupFailed;
+use Native\Mobile\Icon\Svg\SvgConversionException;
+use Native\Mobile\Plugins\Compilers\IOSPluginCompiler;
+use Native\Mobile\Plugins\PluginHookRunner;
+use Native\Mobile\Plugins\PluginRegistry;
+use Native\Mobile\Plugins\PluginSecretsValidator;
+use Native\Mobile\Support\BuildFingerprint;
+use Native\Mobile\Support\BuildState;
+use Native\Mobile\Support\BundleFileManager;
+
+use function Laravel\Prompts\error;
+
+class BuildIosAppCommand extends Command
+{
+    use ChecksLatestBuildNumber, CleansEnvFile, DisplaysMarketingBanners, InstallsAppIcon, InstallsCustomIcons, InstallsSplashScreen, ValidatesAppConfig;
+
+    private bool $verbose;
+
+    private string $appPath;
+
+    protected string $basePath;
+
+    private string $containerPath;
+
+    private string $logPath;
+
+    protected ?string $target;
+
+    private string $xcodeProjectPath;
+
+    private int|string $buildNumber;
+
+    private ?BuildState $buildState = null;
+
+    protected $signature = 'native:build {--target=} {--release} {--simulated} {--no-tty} {--cleanup-provisioning-profile : Clean up CI provisioning profile settings}
+        {--fresh : Run every build step, even ones whose inputs are unchanged since the last build}
+        {--upload-to-app-store : Upload iOS app to App Store Connect after packaging}
+        {--jump-by= : Add extra number to the suggested version (e.g. --jump-by=10 to skip ahead)}
+        {--api-key= : Path to App Store Connect API key file (iOS)}
+        {--api-key-path= : Path to App Store Connect API key file (.p8) - same as --api-key}
+        {--api-key-id= : App Store Connect API key ID}
+        {--api-issuer-id= : App Store Connect API issuer ID}';
+
+    public function handle(): int|string
+    {
+        // Building iOS apps needs Xcode and its command-line tools, so bail out
+        // early before we touch the build log or copy any files.
+        if (! $this->runningOnMacOs()) {
+            $this->error('native:build requires macOS — building iOS apps needs Xcode and its command-line tools.');
+
+            return Command::FAILURE;
+        }
+
+        $this->basePath = base_path('nativephp/ios');
+        $this->logPath = base_path('nativephp/ios-build.log');
+
+        $this->containerPath = $this->basePath.'/NativePHP/';
+        $this->appPath = $this->basePath.'/laravel/';
+        $this->xcodeProjectPath = $this->basePath.'/NativePHP.xcodeproj';
+
+        $this->target = $this->option('target');
+
+        $this->verbose = getenv('SHELL_VERBOSITY', $this->getOutput()->getVerbosity());
+
+        // Handle cleanup option if requested
+        if ($this->option('cleanup-provisioning-profile')) {
+            $this->cleanupProvisioningProfileConfiguration();
+
+            return Command::SUCCESS;
+        }
+
+        // Clear the last log
+        file_put_contents($this->logPath, '');
+
+        // Resolve the build number BEFORE the Laravel app is bundled. The zipped
+        // .env and bundled.version are the runtime's only way to tell one build
+        // from the next: if they're sealed with the boot-time value and the
+        // App Store Connect lookup only runs afterwards, every upload of the
+        // same version ships an identical bundle identity and the device never
+        // re-extracts. Xcode-driven builds manage their own build number and
+        // must not have .env bumped underneath them, so they keep the boot value.
+        if (! getenv('NATIVEPHP_XCODE_BUILD')) {
+            try {
+                $this->resolveBuildNumber();
+            } catch (AppStoreConnectLookupFailed $e) {
+                error($e->getMessage());
+
+                return Command::FAILURE;
+            }
+        }
+
+        $this->bundleLaravelApp();
+
+        if (! getenv('NATIVEPHP_XCODE_BUILD')) {
+            // We can't configure inside of Xcode as changing the project files will interrupt the build process
+            if (! $this->configureXcodeProject()) {
+                return Command::FAILURE;
+            }
+
+            return $this->build() ? Command::SUCCESS : Command::FAILURE;
+        }
+
+        return Command::SUCCESS;
+    }
+
+    /**
+     * Overridable so the ordering in handle() can be exercised on Linux CI,
+     * where the real check would bail before the bundle step is reached.
+     */
+    protected function runningOnMacOs(): bool
+    {
+        return PHP_OS_FAMILY === 'Darwin';
+    }
+
+    protected function bundleLaravelApp(): void
+    {
+        @mkdir($this->appPath, 0755, true);
+
+        $configExcludes = config('nativephp.cleanup_exclude_files', []);
+        $release = (bool) $this->option('release');
+        $state = $this->buildState();
+
+        // The staged copy of the app in nativephp/ios/laravel is kept between
+        // builds. It can be brought up to date in place when it was made with
+        // the same exclusions; otherwise start from an empty directory.
+        $stagingFingerprint = BuildFingerprint::of(BundleFileManager::excludes($configExcludes, base_path()));
+        $incremental = $state->matches('staging', $stagingFingerprint) && is_dir($this->appPath.'vendor');
+
+        // Its vendor/ can be kept too when nothing composer install depends
+        // on has changed since the last successful install.
+        $composerFingerprint = BuildFingerprint::composer(base_path(), $release ? ['--no-dev'] : []);
+        $reuseVendor = $incremental
+            && $state->matches('composer', $composerFingerprint)
+            && is_file($this->appPath.'vendor/autoload.php');
+        $autoloadWasCurrent = $reuseVendor && $state->matches('autoload', $composerFingerprint);
+
+        // Whatever happens next changes the staged tree, so nothing about it
+        // can be trusted until each step has finished again.
+        $state->forget('staging', 'autoload', ...($reuseVendor ? [] : ['composer']));
+
+        $changes = null;
+
+        $this->components->task(
+            $incremental ? 'Copying Laravel app (changed files only)' : 'Copying Laravel app',
+            function () use ($incremental, $reuseVendor, $configExcludes, &$changes) {
+                if (! $incremental) {
+                    BundleFileManager::copy(base_path(), $this->appPath, $configExcludes);
+
+                    return;
+                }
+
+                // Written by this command further down, so always start from
+                // the project's own copy.
+                @unlink($this->appPath.'.env');
+
+                $changes = BundleFileManager::sync(
+                    base_path(),
+                    $this->appPath,
+                    $configExcludes,
+                    $reuseVendor ? ['/vendor'] : [],
+                );
+            }
+        );
+
+        $state->record('staging', $stagingFingerprint);
+
+        // Set ASSET_URL in .env
+        file_put_contents($this->appPath.'.env', PHP_EOL.'ASSET_URL="/_assets"'.PHP_EOL, FILE_APPEND);
+
+        if ($reuseVendor) {
+            $this->skippedTask('Installing Composer dependencies');
+
+            // vendor/ is unchanged, but the app's own classes may not be.
+            // Regenerate the autoloader if anything it's built from moved.
+            $composerJson = json_decode((string) file_get_contents(base_path('composer.json')), true);
+            $autoloadPaths = is_array($composerJson) ? BuildFingerprint::autoloadPaths($composerJson, ! $release) : [''];
+
+            if ($autoloadWasCurrent && ! BuildFingerprint::touches($changes, $autoloadPaths)) {
+                $this->skippedTask('Updating Composer autoloader');
+            } else {
+                $this->components->task('Updating Composer autoloader', fn () => $this->runComposer([
+                    'dump-autoload',
+                    '--no-scripts',
+                    ...($release ? ['--no-dev'] : []),
+                ]));
+            }
+        } else {
+            $this->components->task('Installing Composer dependencies', fn () => $this->runComposer([
+                'install',
+                ...($release ? ['--no-dev'] : []),
+            ]));
+
+            $state->record('composer', $composerFingerprint);
+        }
+
+        $state->record('autoload', $composerFingerprint);
+
+        $this->components->task('Removing unnecessary files', fn () => BundleFileManager::removeUnnecessaryFiles(
+            $this->appPath,
+            $configExcludes
+        ));
+        $this->cleanEnvFile($this->appPath.'.env');
+        $this->createAppZip();
+    }
+
+    /**
+     * Run a composer command in the staged app, exiting the build if it fails.
+     *
+     * @param  array<int, string>  $arguments
+     */
+    private function runComposer(array $arguments): bool
+    {
+        $result = Process::path($this->appPath)
+            ->forever()
+            ->run(['composer', ...$arguments], function ($type, $output) {
+                file_put_contents($this->logPath, $output, FILE_APPEND);
+
+                if ($this->verbose) {
+                    $this->output->write($output);
+                }
+            });
+
+        if (! $result->successful()) {
+            $errorOutput = $result->errorOutput();
+            if ($errorOutput) {
+                file_put_contents($this->logPath, $errorOutput, FILE_APPEND);
+            }
+
+            error('Composer '.$arguments[0].' failed. Check your dependencies and try again.');
+            file_put_contents($this->logPath, 'ERROR: composer '.$arguments[0].' failed with exit code '.$result->exitCode().PHP_EOL, FILE_APPEND);
+            exit(1);
+        }
+
+        return true;
+    }
+
+    /**
+     * What this build remembers about the previous one. Builds started by
+     * Xcode, and any build run with --fresh, start from nothing.
+     */
+    protected function buildState(): BuildState
+    {
+        return $this->buildState ??= BuildState::for(
+            $this->basePath,
+            $this->option('release') ? 'release' : 'debug',
+            (bool) $this->option('fresh') || (bool) getenv('NATIVEPHP_XCODE_BUILD'),
+        );
+    }
+
+    private function skippedTask(string $description): void
+    {
+        $this->components->twoColumnDetail($description, '<fg=gray>skipped (unchanged)</>');
+    }
+
+    private function configureXcodeProject(): bool
+    {
+        $this->updateAppVersion();
+        $this->applyBuildNumber();
+        $this->setAppName();
+        $this->updateInfoPlistFiles();
+        $this->configureDeviceOrientations();
+        $this->updateEntitlementsFile();
+        $this->configureProvisioningProfile();
+        $this->installIosIcon();
+        $this->installIosSplashScreen();
+
+        try {
+            $this->installIosCustomIcons();
+        } catch (SvgConversionException $e) {
+            error($e->getMessage());
+            file_put_contents($this->logPath, 'ERROR: '.$e->getMessage().PHP_EOL, FILE_APPEND);
+
+            return false;
+        }
+
+        $this->updateIcuConfiguration();
+
+        // Compile plugins AFTER core config so plugin entries (like info_plist)
+        // aren't overwritten by updateInfoPlistFiles()
+        if (! $this->compileIosPlugins()) {
+            return false;
+        }
+
+        // Install CocoaPods AFTER plugins have added their dependencies to Podfile
+        $this->installCocoaPods();
+
+        // Resolve Swift Package Manager dependencies AFTER plugins have added them
+        $this->resolveSwiftPackages();
+
+        return true;
+    }
+
+    private function updateIcuConfiguration(): void
+    {
+        // Check if ICU libraries exist in the project
+        $libDir = $this->basePath.'/Libraries/iphoneos';
+        if (! file_exists($libDir.'/libicudata.a')) {
+            return;
+        }
+
+        $projectPath = $this->xcodeProjectPath.'/project.pbxproj';
+        $contents = file_get_contents($projectPath);
+
+        // Add ICU linker flags to OTHER_LDFLAGS if not already present
+        if (! str_contains($contents, '-licudata')) {
+            $contents = preg_replace(
+                '/OTHER_LDFLAGS = \(\s*"\$\(inherited\)",\s*"-lresolv",\s*\);/',
+                "OTHER_LDFLAGS = (\n\t\t\t\t\t\"\$(inherited)\",\n\t\t\t\t\t\"-lresolv\",\n\t\t\t\t\t\"-licui18n\",\n\t\t\t\t\t\"-licuuc\",\n\t\t\t\t\t\"-licudata\",\n\t\t\t\t\t\"-licuio\",\n\t\t\t\t);",
+                $contents
+            );
+
+            file_put_contents($projectPath, $contents);
+        }
+
+        $this->components->twoColumnDetail('ICU support', 'Enabled');
+    }
+
+    private function updateAppVersion(): void
+    {
+        $appVersion = config('nativephp.version');
+
+        Process::path($this->xcodeProjectPath)
+            ->run([
+                'sed', '-i', null,
+                "s|MARKETING_VERSION = [^;]*;|MARKETING_VERSION = {$appVersion};|g",
+                'project.pbxproj',
+            ]);
+    }
+
+    /**
+     * Work out the build number this build ships with, and persist it to .env
+     * and config so everything downstream (the zipped .env, bundled.version,
+     * bundle_meta.json, plugin hooks and the Xcode project) agrees on it.
+     *
+     * Must run before bundleLaravelApp(): the bundle copies .env and reads
+     * config('nativephp.version_code'), so a number resolved any later never
+     * reaches the runtime.
+     */
+    protected function resolveBuildNumber(): int|string
+    {
+        // Only increment build number for actual packaging/release builds that will be uploaded
+        // Skip for: device runs, simulator builds, cleanup operations, debug builds
+        $shouldIncrementBuildNumber = $this->option('release') &&
+                                     ! $this->option('target') &&
+                                     ! $this->option('simulated') &&
+                                     ! $this->option('cleanup-provisioning-profile');
+
+        // Get current build number from config
+        $currentBuildNumber = config('nativephp.version_code');
+
+        if ($shouldIncrementBuildNumber && $this->option('upload-to-app-store')) {
+            $jumpBy = (int) $this->option('jump-by') ?: 0;
+            $updated = $this->updateBuildNumberFromStore('ios', $jumpBy);
+            if ($updated) {
+                $currentBuildNumber = config('nativephp.version_code');
+                $shouldIncrementBuildNumber = false;
+            }
+        }
+
+        if (! $currentBuildNumber) {
+            $currentBuildNumber = 1;
+            if ($shouldIncrementBuildNumber) {
+                $this->updateEnvFile('NATIVEPHP_APP_VERSION_CODE', $currentBuildNumber);
+                config(['nativephp.version_code' => $currentBuildNumber]);
+            }
+        } else {
+            if ($shouldIncrementBuildNumber) {
+                $currentBuildNumber = (int) $currentBuildNumber + 1;
+                $this->updateEnvFile('NATIVEPHP_APP_VERSION_CODE', $currentBuildNumber);
+                config(['nativephp.version_code' => $currentBuildNumber]);
+            }
+        }
+
+        return $this->buildNumber = $currentBuildNumber;
+    }
+
+    private function applyBuildNumber(): void
+    {
+        // handle() resolves before bundling; fall back rather than trip over an
+        // uninitialised property if a future caller reaches here without it.
+        $buildNumber = $this->buildNumber ?? $this->resolveBuildNumber();
+
+        // Update CFBundleVersion (build number) in Xcode project
+        Process::path($this->xcodeProjectPath)
+            ->run([
+                'sed', '-i', null,
+                "s|CURRENT_PROJECT_VERSION = [^;]*;|CURRENT_PROJECT_VERSION = {$buildNumber};|g",
+                'project.pbxproj',
+            ]);
+    }
+
+    private function updateEnvFile(string $key, $value): void
+    {
+        $envFilePath = base_path('.env');
+
+        if (! file_exists($envFilePath)) {
+            return;
+        }
+
+        $envContent = file_get_contents($envFilePath);
+        $newLine = "{$key}={$value}";
+
+        // Check if the key already exists
+        if (preg_match("/^{$key}=.*$/m", $envContent)) {
+            // Update existing line
+            $envContent = preg_replace("/^{$key}=.*$/m", $newLine, $envContent);
+        } else {
+            // Add new line
+            $envContent = PHP_EOL.rtrim($envContent).PHP_EOL.$newLine.PHP_EOL;
+        }
+
+        file_put_contents($envFilePath, $envContent);
+    }
+
+    protected function setAppName(): void
+    {
+        $this->components->task('Configuring Xcode project', function () {
+            $name = config('app.name');
+            $bundleId = config('nativephp.app_id');
+
+            $this->updateDisplayName($name);
+            $this->updateBundleIdForTarget($bundleId);
+        });
+    }
+
+    private function updateDisplayName(string $name): void
+    {
+        $quoted = '"'.$name.'"';
+
+        $escaped = strtr($quoted, [
+            '\\' => '\\\\',
+            '&' => '\\&',
+            '|' => '\\|',
+        ]);
+
+        $script = 's|INFOPLIST_KEY_CFBundleDisplayName[[:space:]]*=[[:space:]]*[^;]*;|'
+            ."INFOPLIST_KEY_CFBundleDisplayName = {$escaped};|g";
+
+        Process::path($this->xcodeProjectPath)
+            ->run([
+                'sed', '-i', null,
+                $script,
+                'project.pbxproj',
+            ]);
+    }
+
+    private function updateBundleIdForTarget(string $bundleId): void
+    {
+        Process::path($this->xcodeProjectPath)
+            ->run([
+                'sed', '-i', null, '-E',
+                "/com\\.nativephp\\.(NativePHPTests|NativePHPUITests)/! s/(PRODUCT_BUNDLE_IDENTIFIER = ).*(;)/\\1{$bundleId}\\2/",
+                'project.pbxproj',
+            ]);
+    }
+
+    /**
+     * Update the Info.plist files with the correct app_id and deeplink_scheme values from the config.
+     */
+    private function updateInfoPlistFiles(): void
+    {
+        $this->components->task('Updating Info.plist files', function () {
+            $appId = config('nativephp.app_id');
+            $deeplinkScheme = config('nativephp.deeplink_scheme');
+
+            $regularInfoPlist = $this->containerPath.'Info.plist';
+            if (file_exists($regularInfoPlist)) {
+                $this->updateInfoPlistFile($regularInfoPlist, $appId, $deeplinkScheme);
+            }
+
+            $simulatorInfoPlist = $this->basePath.'/NativePHP-simulator-Info.plist';
+            if (file_exists($simulatorInfoPlist)) {
+                $this->updateInfoPlistFile($simulatorInfoPlist, $appId, $deeplinkScheme);
+            }
+        });
+    }
+
+    /**
+     * Configure device orientations and targeting by updating the Xcode project settings directly.
+     * Sets TARGETED_DEVICE_FAMILY and INFOPLIST_KEY_UISupportedInterfaceOrientations in project.pbxproj.
+     */
+    private function configureDeviceOrientations(): void
+    {
+        $orientationConfig = config('nativephp.orientation', []);
+        // Support both 'iPad' and 'ipad' as keys
+        $iPadEnabled = config('nativephp.iPad', config('nativephp.ipad', false));
+
+        // Map configuration keys to iOS orientation constants
+        $orientationMap = [
+            'portrait' => 'UIInterfaceOrientationPortrait',
+            'upside_down' => 'UIInterfaceOrientationPortraitUpsideDown',
+            'landscape_left' => 'UIInterfaceOrientationLandscapeLeft',
+            'landscape_right' => 'UIInterfaceOrientationLandscapeRight',
+        ];
+
+        // Collect enabled orientations for each device type
+        $iPhoneOrientations = [];
+        $iPadOrientations = [];
+
+        // Support both 'iPhone' and 'iphone' as keys
+        $iPhoneConfig = $orientationConfig['iPhone'] ?? $orientationConfig['iphone'] ?? [];
+        if (! empty($iPhoneConfig)) {
+            foreach ($iPhoneConfig as $orientation => $enabled) {
+                if ($enabled && isset($orientationMap[$orientation])) {
+                    $iPhoneOrientations[] = $orientationMap[$orientation];
+                }
+            }
+        }
+
+        // If iPad is enabled, set all orientations (required by Apple)
+        if ($iPadEnabled) {
+            $iPadOrientations = [
+                'UIInterfaceOrientationPortrait',
+                'UIInterfaceOrientationPortraitUpsideDown',
+                'UIInterfaceOrientationLandscapeLeft',
+                'UIInterfaceOrientationLandscapeRight',
+            ];
+        }
+
+        // Validate that at least iPhone has orientations enabled
+        if (empty($iPhoneOrientations) && empty($iPadOrientations)) {
+            throw new \Exception('All orientations are disabled for iPhone and iPad is disabled. At least iPhone must have orientations enabled or iPad must be enabled.');
+        }
+
+        $pbxPath = $this->xcodeProjectPath.'/project.pbxproj';
+
+        // Determine device family targeting
+        $deviceFamily = '';
+        if (! empty($iPhoneOrientations) && ! empty($iPadOrientations)) {
+            $deviceFamily = '"1,2"'; // Both iPhone and iPad
+        } elseif (! empty($iPhoneOrientations)) {
+            $deviceFamily = '1'; // iPhone only
+        } else {
+            $deviceFamily = '2'; // iPad only
+        }
+
+        // Update TARGETED_DEVICE_FAMILY
+        $this->updateProjectSetting($pbxPath, 'TARGETED_DEVICE_FAMILY', $deviceFamily);
+
+        // Remove any existing orientation keys first (including conflicting ones)
+        $this->removeProjectSetting($pbxPath, 'INFOPLIST_KEY_UISupportedInterfaceOrientations');
+        $this->removeProjectSetting($pbxPath, 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad');
+        $this->removeProjectSetting($pbxPath, 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone');
+
+        // Check if iPhone and iPad have the same orientations
+        $orientationsMatch = (count($iPhoneOrientations) === count($iPadOrientations)) &&
+                           (count(array_intersect($iPhoneOrientations, $iPadOrientations)) === count($iPhoneOrientations));
+
+        if ($orientationsMatch && ! empty($iPhoneOrientations) && ! empty($iPadOrientations)) {
+            $orientationString = '"'.implode(' ', $iPhoneOrientations).'"';
+            $this->updateProjectSetting($pbxPath, 'INFOPLIST_KEY_UISupportedInterfaceOrientations', $orientationString);
+        } else {
+            if (! empty($iPhoneOrientations)) {
+                $iPhoneOrientationString = '"'.implode(' ', $iPhoneOrientations).'"';
+                $this->updateProjectSetting($pbxPath, 'INFOPLIST_KEY_UISupportedInterfaceOrientations', $iPhoneOrientationString);
+            }
+
+            if (! empty($iPadOrientations)) {
+                $iPadOrientationString = '"'.implode(' ', $iPadOrientations).'"';
+                $this->updateProjectSetting($pbxPath, 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad', $iPadOrientationString);
+            }
+        }
+
+        $this->validateProjectSettings($pbxPath, $deviceFamily, $iPhoneOrientations, $iPadOrientations);
+    }
+
+    /**
+     * Update a project setting in ALL buildSettings sections of the Xcode project.
+     */
+    private function updateProjectSetting(string $pbxPath, string $key, string $value): void
+    {
+        // First remove any existing entries for this key
+        $this->removeProjectSetting($pbxPath, $key);
+
+        // Add the new setting to ALL buildSettings sections
+        // BSD sed (macOS) doesn't support multiline mode flag 'm'
+        // Use address range pattern instead: /start/,/end/
+        $result = Process::run(['sed', '-i', '', '-E',
+            '/buildSettings = \{/,/^\t\t\t\}; *$/ s/(^\t\t\t\}; *$)/\\t\\t\\t\\t'.$key.' = '.$value.';\\
+\\1/',
+            $pbxPath,
+        ]);
+
+    }
+
+    /**
+     * Remove a project setting from ALL buildSettings sections in the Xcode project.
+     */
+    private function removeProjectSetting(string $pbxPath, string $key): void
+    {
+        // Remove all instances of the key, including duplicates
+        // This regex matches the key followed by optional spaces, =, any value, and semicolon
+        Process::run(['sed', '-i', '', '-E', "/{$key}[[:space:]]*=.*;/d", $pbxPath]);
+        Process::run(['sed', '-i', '', '-E', "/{$key}[[:space:]]*$/d", $pbxPath]);
+    }
+
+    /**
+     * Validate that project settings were correctly applied to all buildSettings sections.
+     */
+    private function validateProjectSettings(string $pbxPath, string $deviceFamily, array $iPhoneOrientations, array $iPadOrientations): void
+    {
+        $pbxContent = file_get_contents($pbxPath);
+        if (! $pbxContent) {
+            return;
+        }
+
+        $buildSettingsCount = preg_match_all('/buildSettings = \{/', $pbxContent);
+        $orientationCount = preg_match_all('/INFOPLIST_KEY_UISupportedInterfaceOrientations.*=.*;/', $pbxContent);
+
+        if ($orientationCount === 0) {
+            error('No orientation settings found in any buildSettings section');
+        }
+    }
+
+    /**
+     * Update a specific Info.plist file with the given app_id and deeplink_scheme.
+     * Also removes UIBackgroundModes if push notifications are disabled.
+     *
+     * Uses DOMDocument for proper handling of plist key-value pairs as siblings.
+     */
+    private function updateInfoPlistFile(string $filePath, string $appId, ?string $deeplinkScheme): void
+    {
+        $dom = new \DOMDocument;
+        $dom->preserveWhiteSpace = false;
+        $dom->formatOutput = true;
+
+        if (! $dom->load($filePath)) {
+            $this->error("Failed to load file: {$filePath}");
+
+            return;
+        }
+
+        try {
+            $pushNotificationsEnabled = config('nativephp.permissions.push_notifications', false);
+
+            // Find the root dict element
+            $rootDict = $dom->getElementsByTagName('dict')->item(0);
+            if (! $rootDict) {
+                $this->error("No root dict found in: {$filePath}");
+
+                return;
+            }
+
+            // Parse plist into key-value pairs for easier manipulation
+            $plistData = $this->parsePlistDict($rootDict);
+
+            // Update CFBundleURLTypes
+            if (isset($plistData['CFBundleURLTypes'])) {
+                $this->updateUrlTypes($plistData['CFBundleURLTypes']['valueNode'], $appId, $deeplinkScheme);
+            }
+
+            // Handle UIBackgroundModes
+            $this->updateBackgroundModes($rootDict, $plistData, $pushNotificationsEnabled);
+
+            // Handle UIUserInterfaceStyle
+            $this->updateInterfaceStyle($dom, $rootDict, $plistData);
+
+            // Handle BIFROST_APP_ID
+            $bifrostAppId = env('BIFROST_APP_ID');
+            if ($bifrostAppId) {
+                if (isset($plistData['BIFROST_APP_ID'])) {
+                    $plistData['BIFROST_APP_ID']['valueNode']->nodeValue = $bifrostAppId;
+                } else {
+                    $this->addPlistKeyValue($dom, $rootDict, 'BIFROST_APP_ID', 'string', $bifrostAppId);
+                }
+            }
+
+            // Save the updated XML
+            $xmlContent = $dom->saveXML();
+
+            // Insert DOCTYPE after the XML declaration if not already present
+            if (! str_contains($xmlContent, '<!DOCTYPE')) {
+                $xmlContent = preg_replace(
+                    '/<\?xml.*?\?>\s*/s',
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
+                    $xmlContent
+                );
+            }
+
+            file_put_contents($filePath, $xmlContent);
+        } catch (\Exception $e) {
+            $this->error("Error updating {$filePath}: ".$e->getMessage());
+        }
+    }
+
+    /**
+     * Parse a plist dict element into an associative array of key => [keyNode, valueNode]
+     */
+    private function parsePlistDict(\DOMElement $dict): array
+    {
+        $result = [];
+        $children = [];
+
+        // Collect all element children (skip text nodes)
+        foreach ($dict->childNodes as $child) {
+            if ($child->nodeType === XML_ELEMENT_NODE) {
+                $children[] = $child;
+            }
+        }
+
+        // Parse key-value pairs (keys alternate with values)
+        for ($i = 0; $i < count($children); $i++) {
+            if ($children[$i]->nodeName === 'key' && isset($children[$i + 1])) {
+                $keyName = $children[$i]->nodeValue;
+                $result[$keyName] = [
+                    'keyNode' => $children[$i],
+                    'valueNode' => $children[$i + 1],
+                ];
+                $i++; // Skip the value node
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Update CFBundleURLTypes with app_id and deeplink_scheme
+     */
+    private function updateUrlTypes(\DOMElement $urlTypesArray, string $appId, ?string $deeplinkScheme): void
+    {
+        $dicts = $urlTypesArray->getElementsByTagName('dict');
+        if ($dicts->length === 0) {
+            return;
+        }
+
+        $urlTypeDict = $dicts->item(0);
+        $urlTypeData = $this->parsePlistDict($urlTypeDict);
+
+        // Update CFBundleURLName
+        if (isset($urlTypeData['CFBundleURLName'])) {
+            $urlTypeData['CFBundleURLName']['valueNode']->nodeValue = $appId;
+        }
+
+        // Update CFBundleURLSchemes
+        if (isset($urlTypeData['CFBundleURLSchemes'])) {
+            $schemesArray = $urlTypeData['CFBundleURLSchemes']['valueNode'];
+
+            // Remove all existing string children
+            while ($schemesArray->firstChild) {
+                $schemesArray->removeChild($schemesArray->firstChild);
+            }
+
+            // Add the deeplink scheme if configured
+            if (! empty($deeplinkScheme)) {
+                $stringNode = $schemesArray->ownerDocument->createElement('string', $deeplinkScheme);
+                $schemesArray->appendChild($stringNode);
+            }
+        }
+    }
+
+    /**
+     * Update UIBackgroundModes based on enabled features
+     *
+     * Note: Plugins can declare UIBackgroundModes in their nativephp.json.
+     * All plugin-declared modes are preserved. Core only manages 'remote-notification'
+     * based on push notification settings.
+     */
+    private function updateBackgroundModes(\DOMElement $rootDict, array &$plistData, bool $pushEnabled): void
+    {
+        $modesToKeep = [];
+
+        // Check existing modes (may have been added by plugins via IOSPluginCompiler)
+        if (isset($plistData['UIBackgroundModes'])) {
+            $modesArray = $plistData['UIBackgroundModes']['valueNode'];
+            $strings = $modesArray->getElementsByTagName('string');
+
+            foreach ($strings as $string) {
+                $mode = $string->nodeValue;
+
+                if ($mode === 'remote-notification' && $pushEnabled) {
+                    $modesToKeep[] = $mode;
+                } elseif ($mode !== 'remote-notification') {
+                    // Keep all other modes (plugin-declared ones like audio, location, etc.)
+                    $modesToKeep[] = $mode;
+                }
+            }
+        }
+
+        // Add remote-notification if enabled in config but not present
+        if ($pushEnabled && ! in_array('remote-notification', $modesToKeep)) {
+            $modesToKeep[] = 'remote-notification';
+        }
+
+        // Remove or update UIBackgroundModes
+        if (empty($modesToKeep)) {
+            // Remove the key-value pair entirely
+            if (isset($plistData['UIBackgroundModes'])) {
+                $this->removePlistKeyValue(
+                    $rootDict,
+                    $plistData['UIBackgroundModes']['keyNode'],
+                    $plistData['UIBackgroundModes']['valueNode']
+                );
+                unset($plistData['UIBackgroundModes']);
+            }
+        } else {
+            if (isset($plistData['UIBackgroundModes'])) {
+                // Update existing array
+                $modesArray = $plistData['UIBackgroundModes']['valueNode'];
+                while ($modesArray->firstChild) {
+                    $modesArray->removeChild($modesArray->firstChild);
+                }
+                foreach ($modesToKeep as $mode) {
+                    $stringNode = $modesArray->ownerDocument->createElement('string', $mode);
+                    $modesArray->appendChild($stringNode);
+                }
+            } else {
+                // Create new UIBackgroundModes
+                $dom = $rootDict->ownerDocument;
+                $keyNode = $dom->createElement('key', 'UIBackgroundModes');
+                $arrayNode = $dom->createElement('array');
+                foreach ($modesToKeep as $mode) {
+                    $stringNode = $dom->createElement('string', $mode);
+                    $arrayNode->appendChild($stringNode);
+                }
+                $rootDict->appendChild($keyNode);
+                $rootDict->appendChild($arrayNode);
+            }
+        }
+    }
+
+    /**
+     * Lock the app to a single interface style via UIUserInterfaceStyle.
+     *
+     * `nativephp.appearance` of `dark` / `light` pins the whole app —
+     * system chrome (nav bars, sheets, keyboards, the window background
+     * behind safe areas) included — so an app with a fixed identity never
+     * shows the OS's opposite-appearance surfaces. `system` (the default)
+     * removes the key and follows the device.
+     *
+     * @param  array<string, array{keyNode: \DOMElement, valueNode: \DOMElement}>  $plistData
+     */
+    private function updateInterfaceStyle(\DOMDocument $dom, \DOMElement $rootDict, array &$plistData): void
+    {
+        $style = match (strtolower((string) config('nativephp.appearance', 'system'))) {
+            'dark' => 'Dark',
+            'light' => 'Light',
+            default => null,
+        };
+
+        if ($style === null) {
+            if (isset($plistData['UIUserInterfaceStyle'])) {
+                $this->removePlistKeyValue(
+                    $rootDict,
+                    $plistData['UIUserInterfaceStyle']['keyNode'],
+                    $plistData['UIUserInterfaceStyle']['valueNode']
+                );
+                unset($plistData['UIUserInterfaceStyle']);
+            }
+
+            return;
+        }
+
+        if (isset($plistData['UIUserInterfaceStyle'])) {
+            $plistData['UIUserInterfaceStyle']['valueNode']->nodeValue = $style;
+
+            return;
+        }
+
+        $this->addPlistKeyValue($dom, $rootDict, 'UIUserInterfaceStyle', 'string', $style);
+    }
+
+    /**
+     * Remove a plist key-value pair from the dict
+     */
+    private function removePlistKeyValue(\DOMElement $dict, \DOMElement $keyNode, \DOMElement $valueNode): void
+    {
+        $dict->removeChild($valueNode);
+        $dict->removeChild($keyNode);
+    }
+
+    /**
+     * Add a plist key-value pair to the dict
+     */
+    private function addPlistKeyValue(\DOMDocument $dom, \DOMElement $dict, string $key, string $valueType, string $value): void
+    {
+        $keyNode = $dom->createElement('key', $key);
+        $valueNode = $dom->createElement($valueType, $value);
+        $dict->appendChild($keyNode);
+        $dict->appendChild($valueNode);
+    }
+
+    /**
+     * Update the NativePHP.entitlements file with the correct deeplink_host value from the config
+     * and remove push notifications if disabled.
+     */
+    private function updateEntitlementsFile(): void
+    {
+
+        $deeplinkHost = config('nativephp.deeplink_host');
+        $pushNotificationsEnabled = config('nativephp.permissions.push_notifications', false);
+        $nfcEnabled = config('nativephp.permissions.nfc', false);
+
+        $entitlementsFile = $this->containerPath.'NativePHP.entitlements';
+
+        // Create clean entitlements file from scratch to avoid XML parsing issues
+        if ($pushNotificationsEnabled) {
+            $apsEnvironment = $this->determineApsEnvironment();
+
+            $entitlementsContent = '<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>'.$apsEnvironment.'</string>';
+
+            // Add associated domains if deeplink host is configured
+            if (! empty($deeplinkHost)) {
+                $entitlementsContent .= '
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:'.$deeplinkHost.'</string>
+	</array>';
+            }
+
+            // Add NFC entitlement if enabled (compatible format for iOS 18.2+)
+            if ($nfcEnabled) {
+                $entitlementsContent .= '
+	<key>com.apple.developer.nfc.readersession.formats</key>
+	<array>
+		<string>TAG</string>
+	</array>';
+            }
+
+            $entitlementsContent .= '
+</dict>
+</plist>';
+
+            file_put_contents($entitlementsFile, $entitlementsContent);
+        } else {
+            // Create minimal entitlements with just associated domains if needed
+            $entitlementsContent = '<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>';
+
+            if (! empty($deeplinkHost)) {
+                $entitlementsContent .= '
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:'.$deeplinkHost.'</string>
+	</array>';
+            }
+
+            // Add NFC entitlement if enabled (compatible format for iOS 18.2+)
+            if ($nfcEnabled) {
+                $entitlementsContent .= '
+	<key>com.apple.developer.nfc.readersession.formats</key>
+	<array>
+		<string>TAG</string>
+	</array>';
+            }
+
+            $entitlementsContent .= '
+</dict>
+</plist>';
+
+            file_put_contents($entitlementsFile, $entitlementsContent);
+        }
+    }
+
+    private function determineApsEnvironment(): string
+    {
+        // Check if we're in a package command with export method
+        $exportMethod = env('NATIVEPHP_EXPORT_METHOD');
+
+        if ($exportMethod === 'development' || $exportMethod === 'debugging') {
+            return 'development';
+        }
+
+        // For release builds or production export methods (app-store, ad-hoc, enterprise)
+        if ($this->option('release') ||
+            in_array($exportMethod, ['app-store', 'ad-hoc', 'enterprise'])) {
+            return 'production';
+        }
+
+        // Default to development for debug builds
+        return 'development';
+    }
+
+    private function createAppZip(): void
+    {
+        $zipPath = $this->containerPath.'app.zip';
+
+        // Remove existing ZIP if it exists
+        if (file_exists($zipPath)) {
+            unlink($zipPath);
+        }
+
+        // Create ZIP from the prepared app directory
+        $escapedAppPath = escapeshellarg($this->appPath);
+        $escapedZipPath = escapeshellarg($zipPath);
+
+        // Build-time-only artifacts that don't belong in the runtime bundle —
+        // mirrors the Android packer's exclusions (see PreparesBuild). Biggest
+        // win is the native project templates/headers under mobile/resources
+        // (~11 MB of Android C/PHP headers alone), which the runtime app never
+        // reads. The `vendor/*/vendor/...` glob also drops nested duplicates
+        // that slip in when a plugin ships its own vendor/ dir. In `zip`'s
+        // matcher `*` spans `/`, so each prefix excludes the whole subtree.
+        $excludes = "-x '*.DS_Store' '*/.*'"
+            ." 'vendor/nativephp/mobile/resources/*'"
+            ." 'vendor/*/vendor/nativephp/mobile/resources/*'"
+            ." 'vendor/nativephp/mobile/vendor/*'"
+            ." 'vendor/endroid/*'";
+
+        // -9 max compression for release; -0 (stored) in debug for faster
+        // build + boot at the cost of on-disk size.
+        $level = $this->option('release') ? '-9' : '-0';
+        $command = "cd {$escapedAppPath} && zip {$level} -r {$escapedZipPath} . {$excludes}";
+
+        $result = Process::run($command);
+
+        if (! $result->successful()) {
+            $error = trim($result->errorOutput()) ?: trim($result->output());
+
+            throw new \Exception('Failed to create ZIP file: '.($error ?: 'exit code '.$result->exitCode()));
+        }
+
+        $this->createBundledVersionFile($zipPath);
+
+        // The staged app stays in place so the next build only has to copy
+        // what changed. See bundleLaravelApp().
+    }
+
+    private function createBundledVersionFile(string $zipPath): void
+    {
+        $appVersion = config('nativephp.version', 'DEBUG');
+        $versionCode = config('nativephp.version_code', 1);
+        $bundleVersionId = $appVersion === 'DEBUG' ? 'DEBUG' : "{$appVersion}b{$versionCode}";
+
+        $versionFilePath = dirname($zipPath).'/bundled.version';
+        file_put_contents($versionFilePath, $bundleVersionId);
+
+        // Write bundle_meta.json for fast boot-time metadata reads (matches Android PreparesBuild)
+        $bifrostAppId = null;
+        $envPath = base_path('.env');
+        if (file_exists($envPath)) {
+            $envContent = file_get_contents($envPath);
+            if (preg_match('/BIFROST_APP_ID=(.+)/', $envContent, $matches)) {
+                $bifrostAppId = trim($matches[1]);
+            }
+        }
+
+        // Native-first boot manifest (mirrors Android PreparesBuild): the
+        // device-side BootPlanner matches the start URL against these patterns
+        // to decide whether the first screen dispatches directly into the
+        // persistent runtime (no WKWebView) or through the legacy WebView
+        // path. NATIVEPHP_BOOT_MODE=web forces the legacy path.
+        $nativeRoutes = array_keys(NativeRouter::registeredRoutes());
+        $entryMode = env('NATIVEPHP_BOOT_MODE') === 'web' ? 'web' : 'auto';
+
+        $bundleMeta = json_encode([
+            'version' => $appVersion,
+            'version_code' => (int) $versionCode,
+            'bifrost_app_id' => $bifrostAppId,
+            'runtime_mode' => config('nativephp.runtime.mode', 'persistent'),
+            'entry_mode' => $entryMode,
+            'native_routes' => $nativeRoutes,
+            // What this shell ships with, so a lane cannot offer it a release
+            // that predates its own code. Written here because .env is
+            // replaced wholesale by a payload and this has to outlive one.
+            'shell_built_at' => env('NATIVEPHP_OTA_SHELL_BUILT_AT'),
+            'shell_commit' => env('NATIVEPHP_OTA_SHELL_COMMIT'),
+        ], JSON_PRETTY_PRINT);
+
+        file_put_contents(dirname($zipPath).'/bundle_meta.json', $bundleMeta);
+    }
+
+    private function configureProvisioningProfile(): void
+    {
+        $provisioningProfileName = getenv('IOS_PROVISIONING_PROFILE_NAME') ?: getenv('EXTRACTED_PROVISIONING_PROFILE_NAME');
+        $provisioningProfileUuid = getenv('EXTRACTED_PROVISIONING_PROFILE_UUID');
+        $teamId = getenv('IOS_TEAM_ID') ?: config('nativephp.development_team');
+
+        $profileIdentifier = $provisioningProfileUuid ?: $provisioningProfileName;
+
+        if (! $teamId || ! $profileIdentifier) {
+            return;
+        }
+
+        // Add PROVISIONING_PROFILE_SPECIFIER to every configuration that signs with NativePHP.entitlements.
+        // The simulator target's configurations match too, but simulator builds ignore provisioning profiles.
+        $sedScript = '/CODE_SIGN_ENTITLEMENTS = NativePHP\\/NativePHP\\.entitlements;/a\\
+				PROVISIONING_PROFILE_SPECIFIER = "'.$profileIdentifier.'";';
+
+        Process::path($this->xcodeProjectPath)
+            ->run([
+                'sed', '-i', '',
+                $sedScript,
+                'project.pbxproj',
+            ]);
+    }
+
+    public function cleanupProvisioningProfileConfiguration(): void
+    {
+        Process::path($this->xcodeProjectPath)
+            ->run([
+                'sed', '-i', '',
+                '/PROVISIONING_PROFILE_SPECIFIER = "[0-9a-fA-F-]*";/d',
+                'project.pbxproj',
+            ]);
+    }
+
+    private function build(): bool
+    {
+        $result = Process::path($this->basePath)
+            ->forever()
+            ->env([
+                'NATIVEPHP_CLI_BUILD' => true,
+            ])
+            ->tty($this->verbose && ! $this->option('no-tty'))
+            ->run($this->xcodebuildCommand(), function ($type, $output) {
+                file_put_contents($this->logPath, $output, FILE_APPEND);
+
+                if ($this->verbose) {
+                    $this->output->write($output);
+                }
+            });
+
+        if (! $result->successful()) {
+            error('Build failed');
+            $this->newLine();
+
+            // Always show error output when build fails, regardless of verbose mode
+            $errorOutput = $result->errorOutput();
+            $standardOutput = $result->output();
+
+            // Try to find specific xcodebuild errors in the output
+            $allOutput = $standardOutput."\n".$errorOutput;
+
+            // Look for common error patterns with their solutions
+            $errorPatterns = [
+                '/Provisioning profile "([^"]+)" doesn\'t include signing certificate "([^"]+)"/' => [
+                    'type' => 'certificate_mismatch',
+                    'solution' => 'Your provisioning profile and certificate don\'t match. Either:
+  1. Regenerate your provisioning profile in Apple Developer Portal to include this certificate
+  2. Download and install the correct certificate that matches your profile
+  3. Check that your certificate hasn\'t expired',
+                ],
+                '/No signing certificate "([^"]+)" found/' => [
+                    'type' => 'missing_certificate',
+                    'solution' => 'The signing certificate is not installed in your keychain. Either:
+  1. Download and install the certificate from Apple Developer Portal
+  2. For CI: ensure IOS_DISTRIBUTION_CERTIFICATE_PATH and IOS_DISTRIBUTION_CERTIFICATE_PASSWORD are set',
+                ],
+                '/Provisioning profile "([^"]+)" is expired/' => [
+                    'type' => 'expired_profile',
+                    'solution' => 'Your provisioning profile has expired. Regenerate it in Apple Developer Portal.',
+                ],
+                '/No profiles for \'([^\']+)\' were found/' => [
+                    'type' => 'no_profile',
+                    'solution' => 'No provisioning profile found for this bundle ID. Either:
+  1. Create a provisioning profile in Apple Developer Portal
+  2. For CI: set IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH',
+                ],
+                '/Code Signing Error: (.+)$/m' => [
+                    'type' => 'code_signing',
+                    'solution' => 'Check your code signing configuration in Xcode or your CI environment variables.',
+                ],
+                '/error: (.+)$/m' => [
+                    'type' => 'generic',
+                    'solution' => null,
+                ],
+                '/fatal error: (.+)$/m' => [
+                    'type' => 'fatal',
+                    'solution' => null,
+                ],
+            ];
+
+            $foundErrors = [];
+            $shownSolution = false;
+
+            foreach ($errorPatterns as $pattern => $info) {
+                if (preg_match_all($pattern, $allOutput, $matches, PREG_SET_ORDER)) {
+                    foreach ($matches as $match) {
+                        $errorMsg = trim($match[0]);
+                        if (! in_array($errorMsg, $foundErrors)) {
+                            $foundErrors[] = $errorMsg;
+
+                            // Show solution for specific errors (only once)
+                            if (! $shownSolution && $info['solution']) {
+                                $this->newLine();
+                                $this->line('<fg=white;bg=red> ERROR </>  '.$errorMsg);
+                                $this->newLine();
+                                $this->line('<fg=yellow>How to fix:</>');
+                                $this->line($info['solution']);
+                                $this->newLine();
+                                $shownSolution = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If we didn't show a specific solution, show generic error output
+            if (! $shownSolution) {
+                if (! empty($foundErrors)) {
+                    $this->line('<fg=red>Detected errors:</>');
+                    foreach (array_unique($foundErrors) as $errorLine) {
+                        $this->line('  • '.$errorLine);
+                    }
+                    $this->newLine();
+                }
+
+                // Show the last portion of output which usually contains the error
+                if ($errorOutput) {
+                    $this->line('<fg=yellow>Error output (last 30 lines):</>');
+                    $errorLines = explode("\n", trim($errorOutput));
+                    $lastErrors = array_slice($errorLines, -30);
+                    foreach ($lastErrors as $line) {
+                        $this->line($line);
+                    }
+                    $this->newLine();
+                }
+            }
+
+            $this->line('<fg=yellow>Build log saved to:</> '.$this->logPath);
+            $this->line('<fg=gray>Run with -v for full build output.</>');
+
+            return false;
+        }
+
+        \Laravel\Prompts\outro('App build succeeded!');
+
+        if ($this->option('simulated')) {
+            $this->line('<fg=yellow>Simulator app:</> '.$this->simulatorAppPath());
+        }
+
+        // Run post-build hooks for all plugins
+        $this->runPostBuildHooks();
+
+        return true;
+    }
+
+    /**
+     * The xcodebuild invocation for this build.
+     *
+     * A simulated build with no target builds for any simulator rather than
+     * archiving, so CI and scripts can get a simulator .app without a device
+     * to point at. It lands at simulatorAppPath().
+     *
+     * @return array<int, string>
+     */
+    protected function xcodebuildCommand(): array
+    {
+        $simulated = (bool) $this->option('simulated');
+
+        // Use CocoaPods workspace if it exists, otherwise fall back to internal workspace
+        $workspace = file_exists($this->basePath.'/NativePHP.xcworkspace')
+            ? 'NativePHP.xcworkspace'
+            : 'NativePHP.xcodeproj/project.xcworkspace';
+
+        $action = match (true) {
+            (bool) $this->target => [
+                '-destination', 'id='.$this->target.($simulated ? '' : ',platform=iOS'),
+                'build',
+            ],
+            // A generic destination builds every simulator architecture. The
+            // app target already excludes x86_64 (the PHP simulator libraries
+            // are arm64 only), so stop the dependencies building it too.
+            $simulated => [
+                '-destination', 'generic/platform=iOS Simulator',
+                'ARCHS=arm64',
+                'build',
+            ],
+            default => [
+                '-archivePath', $this->basePath.'/build/NativePHP.xcarchive',
+                'archive',
+            ],
+        };
+
+        return [
+            'xcodebuild',
+            '-scheme', 'NativePHP'.($simulated ? '-simulator' : ''),
+            '-workspace', $workspace,
+            '-sdk', ($simulated ? 'iphonesimulator' : 'iphoneos'),
+            ...($simulated ? [] : ['-configuration', $this->option('release') ? 'Release' : 'Debug']),
+            // CODE_SIGN_STYLE is already included in the signing args when needed
+            ...$this->getSigningArgs($simulated),
+            '-derivedDataPath', 'build',
+            // Skip Swift Package Manager plugin validation to avoid bundle signing issues
+            '-skipPackagePluginValidation',
+            // Add verbose output to help debug build failures
+            '-verbose',
+            ...$action,
+        ];
+    }
+
+    /**
+     * Where a simulated build leaves the app. The simulator scheme builds its
+     * Debug configuration.
+     */
+    protected function simulatorAppPath(): string
+    {
+        return $this->basePath.'/build/Build/Products/Debug-iphonesimulator/NativePHP-simulator.app';
+    }
+
+    private function validateInfoPlistXml(string $filePath): void
+    {
+        $xml = simplexml_load_file($filePath);
+        if ($xml === false) {
+            throw new \Exception('Failed to parse XML structure');
+        }
+    }
+
+    private function getSigningArgs(bool $simulated): array
+    {
+        if ($simulated) {
+            return [];
+        }
+
+        if ($this->option('target')) {
+            return ['-allowProvisioningUpdates'];
+        }
+
+        $teamId = getenv('IOS_TEAM_ID') ?: config('nativephp.development_team');
+        $provisioningProfileName = getenv('EXTRACTED_PROVISIONING_PROFILE_NAME');
+        $tempKeychainPath = getenv('NATIVEPHP_TEMP_KEYCHAIN_PATH');
+
+        $certPath = env('IOS_DISTRIBUTION_CERTIFICATE_PATH');
+        $provisioningPath = env('IOS_DISTRIBUTION_PROVISIONING_PROFILE_PATH');
+
+        $hasFileBasedCreds = $certPath && $provisioningPath && $teamId;
+        $hasTempKeychain = $tempKeychainPath && $teamId;
+
+        if ($hasTempKeychain || $hasFileBasedCreds) {
+            return [
+                'CODE_SIGN_STYLE=Manual',
+                "DEVELOPMENT_TEAM={$teamId}",
+                'CODE_SIGN_IDENTITY=Apple Distribution',
+            ];
+        }
+
+        if ($certPath || $provisioningPath) {
+            throw new \Exception('Incomplete CI signing configuration');
+        }
+
+        return ['-allowProvisioningUpdates'];
+    }
+
+    /**
+     * Compile iOS plugins by copying native code and generating bridge registrations.
+     *
+     * @return bool True if compilation succeeded, false if it failed
+     */
+    private function compileIosPlugins(): bool
+    {
+        $plugins = app(PluginRegistry::class);
+
+        // Always compile, even with zero plugins — the compiler regenerates the
+        // registration files with empty stubs so stale plugin references never build.
+
+        // Validate plugin secrets before compilation
+        $secretsValidator = new PluginSecretsValidator($plugins->all());
+        $secretsValidator->setOutput($this->output);
+        $result = $secretsValidator->validate();
+
+        if (! $result['valid']) {
+            $this->newLine();
+            error('Missing required plugin secrets:');
+            $this->newLine();
+
+            foreach ($result['missing'] as $missing) {
+                $this->components->twoColumnDetail(
+                    "<fg=yellow>{$missing['secret']}</>",
+                    "<fg=gray>{$missing['description']}</>"
+                );
+            }
+
+            $this->newLine();
+            $this->line('<fg=gray>Add these to your .env file and try again.</>');
+
+            return false;
+        }
+
+        try {
+            $compiler = app(IOSPluginCompiler::class);
+            $compiler->setOutput($this->output)
+                ->setAppId(config('nativephp.app_id', ''))
+                ->setConfig([
+                    'version' => config('nativephp.version'),
+                    'version_code' => config('nativephp.version_code'),
+                    'release' => $this->option('release'),
+                ]);
+
+            foreach ($plugins->all() as $plugin) {
+                $this->components->twoColumnDetail('<fg=blue>Compiling plugin</>', "{$plugin->name} ({$plugin->version})");
+            }
+
+            $compiler->compile();
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->error("❌ Plugin compilation failed: {$e->getMessage()}");
+
+            // A hook that fataled carries the real error underneath. Without
+            // this the author sees the message and no idea where it came from.
+            if ($cause = $e->getPrevious()) {
+                $this->line("   at {$cause->getFile()}:{$cause->getLine()}");
+            }
+
+            return false;
+        }
+    }
+
+    /**
+     * Run post-build hooks for all plugins.
+     */
+    private function runPostBuildHooks(): void
+    {
+        $plugins = app(PluginRegistry::class);
+
+        if ($plugins->count() === 0) {
+            return;
+        }
+
+        $hookRunner = new PluginHookRunner(
+            platform: 'ios',
+            buildPath: $this->basePath,
+            appId: config('nativephp.app_id', ''),
+            config: [
+                'version' => config('nativephp.version'),
+                'version_code' => config('nativephp.version_code'),
+                'release' => $this->option('release'),
+            ],
+            plugins: $plugins->all(),
+            output: $this->output
+        );
+
+        $hookRunner->runPostBuildHooks();
+    }
+
+    /**
+     * Install CocoaPods dependencies if Podfile exists.
+     *
+     * Skipped when the Podfile, lockfile, Pods sandbox and Xcode project are
+     * exactly as the last successful `pod install` left them.
+     */
+    private function installCocoaPods(): void
+    {
+        $podfilePath = $this->basePath.'/Podfile';
+
+        if (! file_exists($podfilePath)) {
+            return;
+        }
+
+        $state = $this->buildState();
+
+        if ($state->matches('cocoapods', BuildFingerprint::cocoaPods($this->basePath))) {
+            $this->skippedTask('Installing CocoaPods dependencies');
+
+            return;
+        }
+
+        $state->forget('cocoapods');
+
+        $this->components->task('Installing CocoaPods dependencies', function () {
+            // No limit: a first install downloads every pod, which can take
+            // longer than any fixed timeout on a slow connection.
+            $result = Process::path($this->basePath)
+                ->forever()
+                ->run(['pod', 'install'], function ($type, $output) {
+                    file_put_contents($this->logPath, $output, FILE_APPEND);
+
+                    if ($this->verbose) {
+                        $this->output->write($output);
+                    }
+                });
+
+            if (! $result->successful()) {
+                $error = $result->errorOutput() ?: $result->output();
+                throw new \Exception($error ?: 'pod install failed with exit code '.$result->exitCode());
+            }
+
+            return true;
+        });
+
+        // Taken after the install, since pod install rewrites the project.
+        $state->record('cocoapods', BuildFingerprint::cocoaPods($this->basePath));
+    }
+
+    /**
+     * Resolve Swift Package Manager dependencies.
+     *
+     * This downloads and resolves SPM packages that were injected into the project.pbxproj
+     * by the plugin compiler.
+     */
+    private function resolveSwiftPackages(): void
+    {
+        $projectPath = $this->basePath.'/NativePHP.xcodeproj/project.pbxproj';
+
+        // Only run if we have SPM packages (check for XCRemoteSwiftPackageReference)
+        if (! file_exists($projectPath)) {
+            return;
+        }
+
+        $projectContent = file_get_contents($projectPath);
+        if (! str_contains($projectContent, 'XCRemoteSwiftPackageReference')) {
+            return;
+        }
+
+        $state = $this->buildState();
+
+        if ($state->matches('swift-packages', BuildFingerprint::swiftPackages($this->basePath))) {
+            $this->skippedTask('Resolving Swift Package dependencies');
+
+            return;
+        }
+
+        $state->forget('swift-packages');
+
+        $resolved = false;
+
+        $this->components->task('Resolving Swift Package dependencies', function () use (&$resolved) {
+            $result = Process::path($this->basePath)
+                ->forever()
+                ->run([
+                    'xcodebuild',
+                    '-resolvePackageDependencies',
+                    '-project', 'NativePHP.xcodeproj',
+                ], function ($type, $output) {
+                    file_put_contents($this->logPath, $output, FILE_APPEND);
+
+                    if ($this->verbose) {
+                        $this->output->write($output);
+                    }
+                });
+
+            return $resolved = $result->successful();
+        });
+
+        if ($resolved) {
+            $state->record('swift-packages', BuildFingerprint::swiftPackages($this->basePath));
+        }
+    }
+}

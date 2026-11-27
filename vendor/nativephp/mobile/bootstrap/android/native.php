@@ -1,0 +1,129 @@
+<?php
+
+use Illuminate\Contracts\Http\Kernel;
+use Native\Mobile\Http\Bridge\BridgeDispatcher;
+use Symfony\Component\HttpFoundation\Response;
+
+$_timing = ['start' => microtime(true)];
+
+// Capture OPcache status early (will be logged later with timing)
+$_opcacheInfo = 'unknown';
+if (function_exists('opcache_get_status')) {
+    $opcacheStatus = @opcache_get_status(false);
+    if ($opcacheStatus) {
+        $_opcacheInfo = 'enabled='.($opcacheStatus['opcache_enabled'] ? 'YES' : 'NO');
+        $_opcacheInfo .= ',cached='.($opcacheStatus['opcache_statistics']['num_cached_scripts'] ?? 0);
+    } else {
+        $_opcacheInfo = 'disabled';
+    }
+} else {
+    $_opcacheInfo = 'NOT_AVAILABLE';
+}
+
+define('LARAVEL_START', microtime(true));
+
+require $_SERVER['COMPOSER_AUTOLOADER_PATH'];
+$_timing['autoload'] = microtime(true);
+
+$app = require_once $_SERVER['LARAVEL_BOOTSTRAP_PATH'].'/app.php';
+$_timing['bootstrap'] = microtime(true);
+
+// Catch uncaught throwables and PHP fatals this request can't trap.
+require_once __DIR__.'/../shared/devtools-boot-report.php';
+nativephp_devtools_install_handlers($app->storagePath());
+
+/*
+|--------------------------------------------------------------------------
+| Handle Laravel request
+|--------------------------------------------------------------------------
+*/
+
+$kernel = $app->make(Kernel::class);
+$_timing['kernel'] = microtime(true);
+
+try {
+    // Query params for every method, cookies as sent, and the body from
+    // php://input parsed into $_POST, $_FILES and $request->file(), the way
+    // PHP-FPM would. Not Request::capture(): on the embed SAPI it never fills
+    // $_FILES, and on Symfony 8 it calls request_parse_body(). Upload temp
+    // files the app didn't move are deleted when the request ends, as PHP does.
+    [$request, $parsedBody] = BridgeDispatcher::classicRequest();
+    register_shutdown_function(fn () => $parsedBody->cleanup());
+    $_timing['capture'] = microtime(true);
+
+    // Bind request so service providers can resolve it during bootstrap
+    $app->instance('request', $request);
+
+    $kernel->bootstrap();
+    $_timing['kernel_bootstrap'] = microtime(true);
+
+    // Bind originalRequest AFTER bootstrap — Filament's SupportServiceProvider
+    // registers a scoped('originalRequest') during boot that would overwrite
+    // an earlier instance() call. This must come after to take precedence.
+    $app->instance('originalRequest', $request);
+
+    $response = $kernel->handle($request);
+    $_timing['handle'] = microtime(true);
+
+    $kernel->terminate($request, $response);
+    $_timing['terminate'] = microtime(true);
+
+    // Calculate timing breakdown (in ms)
+    $autoloadMs = round(($_timing['autoload'] - $_timing['start']) * 1000, 1);
+    $bootstrapMs = round(($_timing['bootstrap'] - $_timing['autoload']) * 1000, 1);
+    $kernelMs = round(($_timing['kernel'] - $_timing['bootstrap']) * 1000, 1);
+    $captureMs = round(($_timing['capture'] - $_timing['kernel']) * 1000, 1);
+    $kernelBootMs = round(($_timing['kernel_bootstrap'] - $_timing['capture']) * 1000, 1);
+    $handleMs = round(($_timing['handle'] - $_timing['kernel_bootstrap']) * 1000, 1);
+    $terminateMs = round(($_timing['terminate'] - $_timing['handle']) * 1000, 1);
+    $totalMs = round(($_timing['terminate'] - $_timing['start']) * 1000, 1);
+
+    // Log timing via error_log (shows in logcat)
+    error_log("PerfTiming: PHP opcache={$_opcacheInfo} autoload={$autoloadMs}ms bootstrap={$bootstrapMs}ms kernel={$kernelMs}ms capture={$captureMs}ms kernel_boot={$kernelBootMs}ms handle={$handleMs}ms terminate={$terminateMs}ms TOTAL={$totalMs}ms");
+
+    // Send headers and body manually (for your bridge)
+    $code = $response->getStatusCode();
+    $status = Response::$statusTexts[$code] ?? 'OK';
+    echo "HTTP/1.1 {$code} {$status}\r\n";
+
+    // Add timing header
+    echo "X-PHP-Timing: opcache={$_opcacheInfo},autoload={$autoloadMs}ms,bootstrap={$bootstrapMs}ms,kernel_boot={$kernelBootMs}ms,handle={$handleMs}ms,total={$totalMs}ms\r\n";
+
+    foreach ($response->headers->all() as $name => $values) {
+        foreach ($values as $value) {
+            echo "{$name}: {$value}\r\n";
+        }
+    }
+
+    echo "\r\n";
+    $response->sendContent();
+
+} catch (Throwable $e) {
+    require_once __DIR__.'/../shared/devtools-boot-report.php';
+    nativephp_devtools_boot_report($e, isset($app) ? $app->storagePath() : null);
+
+    error_log('REQUEST FATAL: '.$e->getMessage().' in '.$e->getFile().':'.$e->getLine());
+    error_log('REQUEST TRACE: '.$e->getTraceAsString());
+
+    // The message and trace are for whoever is building the app, never for
+    // whoever is using it, as on the EDGE error screen. Before the config has
+    // loaded there's no telling which this is, so the user wins. Logcat and
+    // the spool get the crash either way.
+    $showDetail = false;
+
+    try {
+        $showDetail = $app->bound('config') && (bool) $app['config']->get('app.debug');
+    } catch (Throwable) {
+    }
+
+    $body = $showDetail
+        ? 'Error: '.$e->getMessage()."\n".$e->getTraceAsString()
+        : 'Something went wrong.';
+
+    // A whole HTTP response, so PHPBridge passes it through as a 500 instead
+    // of wrapping it as an incomplete one.
+    echo "HTTP/1.1 500 Internal Server Error\r\n";
+    echo "content-type: text/plain\r\n";
+    echo 'content-length: '.strlen($body)."\r\n\r\n";
+    echo $body;
+}

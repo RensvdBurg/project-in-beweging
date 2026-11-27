@@ -1,0 +1,91 @@
+{
+    "namespace": "LocalNotifications",
+
+    "bridge_functions": [
+        {
+            "name": "LocalNotifications.Schedule",
+            "android": "com.nativephp.localnotifications.LocalNotificationsFunctions.Schedule",
+            "ios": "LocalNotificationsFunctions.Schedule",
+            "description": "Schedule a local notification at a specific time or after a delay"
+        },
+        {
+            "name": "LocalNotifications.Cancel",
+            "android": "com.nativephp.localnotifications.LocalNotificationsFunctions.Cancel",
+            "ios": "LocalNotificationsFunctions.Cancel",
+            "description": "Cancel a scheduled notification by its identifier"
+        },
+        {
+            "name": "LocalNotifications.CancelAll",
+            "android": "com.nativephp.localnotifications.LocalNotificationsFunctions.CancelAll",
+            "ios": "LocalNotificationsFunctions.CancelAll",
+            "description": "Cancel all scheduled notifications"
+        },
+        {
+            "name": "LocalNotifications.GetPending",
+            "android": "com.nativephp.localnotifications.LocalNotificationsFunctions.GetPending",
+            "ios": "LocalNotificationsFunctions.GetPending",
+            "description": "Get a list of all pending scheduled notifications"
+        },
+        {
+            "name": "LocalNotifications.RequestPermission",
+            "android": "com.nativephp.localnotifications.LocalNotificationsFunctions.RequestPermission",
+            "ios": "LocalNotificationsFunctions.RequestPermission",
+            "description": "Request permission to show notifications"
+        },
+        {
+            "name": "LocalNotifications.CheckPermission",
+            "android": "com.nativephp.localnotifications.LocalNotificationsFunctions.CheckPermission",
+            "ios": "LocalNotificationsFunctions.CheckPermission",
+            "description": "Check current notification permission status"
+        },
+        {
+            "name": "LocalNotifications.Update",
+            "android": "com.nativephp.localnotifications.LocalNotificationsFunctions.Update",
+            "ios": "LocalNotificationsFunctions.Update",
+            "description": "Update an existing scheduled notification"
+        }
+    ],
+
+    "android": {
+        "min_version": 29,
+        "permissions": [
+            "android.permission.POST_NOTIFICATIONS",
+            "android.permission.SCHEDULE_EXACT_ALARM",
+            "android.permission.USE_EXACT_ALARM",
+            "android.permission.RECEIVE_BOOT_COMPLETED",
+            "android.permission.VIBRATE"
+        ],
+        "receivers": [
+            {
+                "name": ".LocalNotificationReceiver",
+                "exported": false
+            },
+            {
+                "name": ".NotificationTapReceiver",
+                "exported": false
+            },
+            {
+                "name": ".NotificationActionReceiver",
+                "exported": false
+            },
+            {
+                "name": ".BootReceiver",
+                "exported": true
+            }
+        ]
+    },
+
+    "ios": {
+        "min_version": "18.0"
+    },
+
+    "events": [
+        "Ikromjon\\LocalNotifications\\Events\\NotificationScheduled",
+        "Ikromjon\\LocalNotifications\\Events\\NotificationReceived",
+        "Ikromjon\\LocalNotifications\\Events\\NotificationTapped",
+        "Ikromjon\\LocalNotifications\\Events\\PermissionGranted",
+        "Ikromjon\\LocalNotifications\\Events\\PermissionDenied",
+        "Ikromjon\\LocalNotifications\\Events\\NotificationActionPressed",
+        "Ikromjon\\LocalNotifications\\Events\\NotificationUpdated"
+    ]
+}

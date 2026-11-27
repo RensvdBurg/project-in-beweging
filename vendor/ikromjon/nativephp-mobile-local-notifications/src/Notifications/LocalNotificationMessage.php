@@ -1,0 +1,248 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ikromjon\LocalNotifications\Notifications;
+
+use Ikromjon\LocalNotifications\Data\NotificationAction;
+use Ikromjon\LocalNotifications\Data\NotificationOptions;
+use Ikromjon\LocalNotifications\Enums\NotificationPriority;
+use Ikromjon\LocalNotifications\Enums\RepeatInterval;
+use Illuminate\Support\Str;
+
+class LocalNotificationMessage
+{
+    protected string $id;
+
+    protected string $title = '';
+
+    protected string $body = '';
+
+    protected ?int $delay = null;
+
+    protected ?int $at = null;
+
+    protected RepeatInterval|string|null $repeat = null;
+
+    protected ?int $repeatIntervalSeconds = null;
+
+    /** @var array<int, int>|null */
+    protected ?array $repeatDays = null;
+
+    protected ?int $repeatCount = null;
+
+    protected ?bool $sound = null;
+
+    protected ?string $soundName = null;
+
+    protected ?int $badge = null;
+
+    /** @var array<string, mixed>|null */
+    protected ?array $data = null;
+
+    protected ?string $subtitle = null;
+
+    protected ?string $image = null;
+
+    protected ?string $bigText = null;
+
+    /** @var array<int, NotificationAction>|null */
+    protected ?array $actions = null;
+
+    protected NotificationPriority|string|null $priority = null;
+
+    protected ?bool $silent = null;
+
+    public function __construct()
+    {
+        $this->id = (string) Str::uuid();
+    }
+
+    public static function create(): self
+    {
+        return new self;
+    }
+
+    public function id(string $id): self
+    {
+        $this->id = $id;
+
+        return $this;
+    }
+
+    public function title(string $title): self
+    {
+        $this->title = $title;
+
+        return $this;
+    }
+
+    public function body(string $body): self
+    {
+        $this->body = $body;
+
+        return $this;
+    }
+
+    public function subtitle(string $subtitle): self
+    {
+        $this->subtitle = $subtitle;
+
+        return $this;
+    }
+
+    public function delay(int $seconds): self
+    {
+        $this->delay = $seconds;
+
+        return $this;
+    }
+
+    public function at(int $timestamp): self
+    {
+        $this->at = $timestamp;
+
+        return $this;
+    }
+
+    public function repeat(RepeatInterval|string $interval): self
+    {
+        $this->repeat = $interval;
+
+        return $this;
+    }
+
+    public function repeatIntervalSeconds(int $seconds): self
+    {
+        $this->repeatIntervalSeconds = $seconds;
+
+        return $this;
+    }
+
+    /**
+     * @param  array<int, int>  $days  Days of week (1=Monday through 7=Sunday)
+     */
+    public function repeatDays(array $days): self
+    {
+        $this->repeatDays = $days;
+
+        return $this;
+    }
+
+    public function repeatCount(int $count): self
+    {
+        $this->repeatCount = $count;
+
+        return $this;
+    }
+
+    public function sound(bool|string $enabled = true): self
+    {
+        if (is_string($enabled)) {
+            $this->soundName = $enabled;
+            $this->sound = true;
+        } else {
+            $this->sound = $enabled;
+            $this->soundName = null;
+        }
+
+        return $this;
+    }
+
+    public function soundName(string $name): self
+    {
+        $this->soundName = $name;
+        $this->sound = true;
+
+        return $this;
+    }
+
+    public function badge(int $count): self
+    {
+        $this->badge = $count;
+
+        return $this;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function data(array $data): self
+    {
+        $this->data = $data;
+
+        return $this;
+    }
+
+    public function image(string $url): self
+    {
+        $this->image = $url;
+
+        return $this;
+    }
+
+    public function bigText(string $text): self
+    {
+        $this->bigText = $text;
+
+        return $this;
+    }
+
+    public function priority(NotificationPriority|string $priority): self
+    {
+        $this->priority = $priority;
+
+        return $this;
+    }
+
+    public function silent(bool $silent = true): self
+    {
+        $this->silent = $silent;
+
+        return $this;
+    }
+
+    public function action(string $id, string $title, bool $destructive = false, bool $input = false, ?int $snooze = null): self
+    {
+        $this->actions ??= [];
+        $this->actions[] = new NotificationAction($id, $title, $destructive, $input, $snooze);
+
+        return $this;
+    }
+
+    /**
+     * Convert this message to a NotificationOptions DTO.
+     */
+    public function toNotificationOptions(): NotificationOptions
+    {
+        return new NotificationOptions(
+            id: $this->id,
+            title: $this->title,
+            body: $this->body,
+            delay: $this->delay,
+            at: $this->at,
+            repeat: $this->repeat,
+            repeatIntervalSeconds: $this->repeatIntervalSeconds,
+            repeatDays: $this->repeatDays,
+            repeatCount: $this->repeatCount,
+            sound: $this->sound,
+            badge: $this->badge,
+            data: $this->data,
+            subtitle: $this->subtitle,
+            image: $this->image,
+            bigText: $this->bigText,
+            actions: $this->actions,
+            soundName: $this->soundName,
+            priority: $this->priority,
+            silent: $this->silent,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return $this->toNotificationOptions()->toArray();
+    }
+}

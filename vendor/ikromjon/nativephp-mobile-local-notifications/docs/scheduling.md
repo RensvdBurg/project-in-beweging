@@ -1,0 +1,235 @@
+# Scheduling Notifications
+
+## Request Permission
+
+Required on Android 13+ and iOS before notifications can be shown.
+
+```php
+use Ikromjon\LocalNotifications\Facades\LocalNotifications;
+use Ikromjon\LocalNotifications\Enums\RepeatInterval;
+
+$result = LocalNotifications::requestPermission();
+// Returns: ['granted' => true] or ['granted' => false, 'status' => 'pending']
+```
+
+## Schedule a Notification
+
+```php
+// Fire after a delay (seconds)
+LocalNotifications::schedule([
+    'id' => 'reminder-1',
+    'title' => 'Reminder',
+    'body' => 'Time to take a break!',
+    'delay' => 300, // 5 minutes from now
+]);
+
+// Fire at a specific time
+LocalNotifications::schedule([
+    'id' => 'meeting-alert',
+    'title' => 'Meeting in 15 minutes',
+    'body' => 'Team standup in the main room',
+    'at' => now()->addMinutes(15)->timestamp,
+]);
+
+// Repeating daily notification (using enum — recommended)
+LocalNotifications::schedule([
+    'id' => 'daily-checkin',
+    'title' => 'Daily Check-in',
+    'body' => 'How are you feeling today?',
+    'at' => now()->setTime(9, 0)->timestamp, // every day at 9:00 AM
+    'repeat' => RepeatInterval::Daily,
+]);
+
+// Repeating hourly notification
+LocalNotifications::schedule([
+    'id' => 'hydration',
+    'title' => 'Drink Water',
+    'body' => 'Stay hydrated!',
+    'delay' => 3600, // first one in 1 hour, then every hour
+    'repeat' => RepeatInterval::Hourly,
+]);
+
+// String values still work for backwards compatibility
+LocalNotifications::schedule([
+    'id' => 'weekly-review',
+    'title' => 'Weekly Review',
+    'body' => 'Time to review your progress',
+    'at' => now()->next('Monday')->setTime(10, 0)->timestamp,
+    'repeat' => 'weekly', // string also accepted
+]);
+
+// With custom data and options
+LocalNotifications::schedule([
+    'id' => 'task-due',
+    'title' => 'Task Due',
+    'body' => 'Complete the report',
+    'delay' => 3600,
+    'sound' => true,
+    'badge' => 1,
+    'data' => ['task_id' => 42, 'category' => 'reports'],
+]);
+```
+
+**Reserved `data` keys:** the plugin stores its own state alongside your custom data, so the keys `notification_id`, `sound`, `soundName`, `priority`, `silent`, and `action_snooze` are reserved — values you put under those keys are overwritten internally and stripped from event payloads on iOS. Pick different key names.
+
+## Schedule Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | Yes | Unique identifier for the notification |
+| `title` | string | Yes | Notification title |
+| `body` | string | Yes | Notification body text |
+| `delay` | int | No | Delay in seconds from now |
+| `at` | int | No | Unix timestamp to fire at |
+| `repeat` | RepeatInterval\|string | No | Repeat interval (see [Repeat Intervals](repeat-intervals.md)) |
+| `repeatIntervalSeconds` | int | No | Custom repeat interval in seconds (min 60). Mutually exclusive with `repeat` |
+| `repeatDays` | array\<int\> | No | Days of week to repeat (1=Mon..7=Sun). Requires `at`. Mutually exclusive with `repeat` |
+| `repeatCount` | int | No | Limit how many times the notification repeats (min 1). Requires a repeat mechanism |
+| `sound` | bool | No | Play sound (default from `config('local-notifications.default_sound')`, initially `true`) |
+| `soundName` | string | No | Custom sound filename (e.g. `"alert.wav"`). Overrides `sound` boolean. See [Custom Sounds](custom-sounds.md) |
+| `badge` | int | No | Badge number on app icon (iOS) |
+| `data` | array | No | Custom data payload (available in tapped event) |
+| `subtitle` | string | No | Subtitle text (iOS: subtitle, Android: subtext) |
+| `image` | string | No | Image URL (http/https only) to display in the notification |
+| `bigText` | string | No | Expanded body text shown when notification is expanded |
+| `actions` | array | No | Action buttons (limit set by `config('local-notifications.max_actions')`, default 3), each with `id`, `title`, optional `destructive`, `input`, and `snooze` (seconds) |
+| `priority` | NotificationPriority\|string | No | `low`, `default`, `high`, `urgent`. Controls importance and interruption level |
+| `silent` | bool | No | Deliver without sound or vibration, regardless of other settings |
+
+Either `delay` or `at` should be provided. If neither is set, the notification fires after 1 second.
+
+## Priority & Silent Notifications
+
+Control how urgently a notification is presented:
+
+```php
+use Ikromjon\LocalNotifications\Enums\NotificationPriority;
+
+// Urgent: heads-up/banner on both platforms
+LocalNotifications::schedule([
+    'id' => 'critical-alert',
+    'title' => 'Server Down',
+    'body' => 'Production server is not responding',
+    'priority' => NotificationPriority::Urgent,
+]);
+
+// Low: appears in notification shade/center only, no banner or sound
+LocalNotifications::schedule([
+    'id' => 'daily-summary',
+    'title' => 'Daily Summary',
+    'body' => 'You completed 5 tasks today',
+    'priority' => 'low',
+]);
+
+// Silent: no sound or vibration. On iOS the banner still shows;
+// on Android silent also suppresses the heads-up banner.
+LocalNotifications::schedule([
+    'id' => 'background-sync',
+    'title' => 'Sync Complete',
+    'body' => 'Your data is up to date',
+    'priority' => 'high',
+    'silent' => true,
+]);
+```
+
+| Priority | Android | iOS |
+|----------|---------|-----|
+| `low` | `IMPORTANCE_LOW` — shade only, no sound | `.passive` — notification center only |
+| `default` | `IMPORTANCE_DEFAULT` — sound, no heads-up | `.active` — banner + sound |
+| `high` | `IMPORTANCE_HIGH` — heads-up + sound | `.timeSensitive` — banner + sound |
+| `urgent` | `IMPORTANCE_HIGH` — heads-up + sound | `.critical` (falls back to `.timeSensitive` without the critical-alerts entitlement) |
+
+**Omitting `priority` keeps the pre-1.11 behavior** — high-importance delivery (heads-up on Android, banner + sound on iOS). `priority: 'default'` is *not* the same as omitting it: it maps to `IMPORTANCE_DEFAULT`/`.active`, which never shows a heads-up banner on Android.
+
+**iOS entitlements:** `high` and `urgent` rely on interruption levels that require app capabilities:
+
+- `.timeSensitive` needs the **Time Sensitive Notifications** capability (`com.apple.developer.usernotifications.time-sensitive`). Without it, iOS silently treats the notification as `.active` — no error is raised.
+- `.critical` additionally requires the **critical alerts entitlement** (`com.apple.developer.usernotifications.critical-alerts`), which must be granted by Apple, **plus** critical-alert authorization requested at runtime with `requestPermission(critical: true)` (see [Permissions](permissions.md)). If either is missing, the plugin detects it at schedule time (via `criticalAlertSetting`) and automatically downgrades `urgent` to `.timeSensitive`.
+
+**Android channels:** priority is implemented with dedicated notification channels (`{channel_id}_priority_{level}`, plus combined priority+sound variants), because channel importance is immutable on Android. Users can see these channels in the system notification settings, and changing a notification's priority posts it under a different channel.
+
+## Cancel Notifications
+
+```php
+// Cancel a specific notification
+LocalNotifications::cancel('reminder-1');
+
+// Cancel all notifications
+LocalNotifications::cancelAll();
+```
+
+## List Pending Notifications
+
+```php
+$result = LocalNotifications::getPending();
+// Returns: ['success' => true, 'notifications' => '[...]', 'count' => 3]
+```
+
+Day-of-week sub-alarms are aggregated into one entry per notification. A pending snooze (see [Action Buttons](action-buttons.md#native-snooze)) is listed as its own entry under the original notification id with `"snoozed": true` — so a repeating notification that has been snoozed appears twice: once for the repeat schedule and once for the snoozed delivery.
+
+## Check Permission Status
+
+```php
+$result = LocalNotifications::checkPermission();
+// Returns: ['status' => 'granted'] or ['status' => 'denied']
+```
+
+## Update an Existing Notification
+
+Update a pending notification's content or timing without canceling and rescheduling manually.
+
+```php
+use Ikromjon\LocalNotifications\Facades\LocalNotifications;
+use Ikromjon\LocalNotifications\Data\NotificationOptions;
+
+// Update only content (preserves original schedule)
+LocalNotifications::update('reminder-1', [
+    'title' => 'Updated Reminder',
+    'body' => 'New reminder text',
+]);
+
+// Update timing (reschedules the notification)
+LocalNotifications::update('reminder-1', [
+    'title' => 'Rescheduled',
+    'body' => 'Moved to tomorrow',
+    'at' => now()->addDay()->timestamp,
+]);
+
+// Update with DTO
+LocalNotifications::update('reminder-1', new NotificationOptions(
+    id: 'reminder-1',
+    title: 'Updated via DTO',
+    body: 'Works with DTOs too',
+));
+```
+
+Returns `['success' => false, 'error' => 'Notification not found: ...']` if the ID doesn't exist.
+
+Updating a notification also refreshes a pending snoozed delivery (see [Action Buttons](action-buttons.md#native-snooze)) and, on Android, a notification that is still visible in the shade — both receive the new content instead of showing what was current when they were delivered or snoozed. When *only* a snoozed delivery is pending (a one-shot that already fired and was snoozed), the update applies its content changes to the snooze but ignores timing options (`delay`, `at`, `repeat`) — the snooze keeps its remaining countdown.
+
+Notification ids ending in `_snooze` or `_day_{1-7}` are rejected by validation — those suffixes are reserved for the plugin's internal snooze and day-of-week sub-notifications.
+
+## Type-Safe DTO
+
+You can use the `NotificationOptions` DTO instead of arrays for type safety:
+
+```php
+use Ikromjon\LocalNotifications\Data\NotificationOptions;
+use Ikromjon\LocalNotifications\Data\NotificationAction;
+use Ikromjon\LocalNotifications\Enums\RepeatInterval;
+
+$options = new NotificationOptions(
+    id: 'dto-example',
+    title: 'DTO Notification',
+    body: 'Using the type-safe DTO',
+    repeat: RepeatInterval::Daily,
+    at: now()->setTime(9, 0)->timestamp,
+    repeatCount: 7,
+    actions: [
+        new NotificationAction(id: 'done', title: 'Done'),
+        new NotificationAction(id: 'snooze', title: 'Snooze', snooze: 300),
+    ],
+);
+
+LocalNotifications::schedule($options);
+```

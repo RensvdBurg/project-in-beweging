@@ -1,0 +1,837 @@
+import Foundation
+import UIKit
+import ZIPFoundation
+
+
+class AppUpdateManager {
+    static let shared = AppUpdateManager()
+
+    private let documentsPath: String
+    private let appPath: String
+    private let updatesPath: String
+    private var appReady = false
+
+    private init() {
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        documentsPath = documentsURL.path
+        appPath = documentsURL.appendingPathComponent("app").path
+        updatesPath = documentsURL.appendingPathComponent("updates").path
+
+        // Ensure directories exist
+        try? FileManager.default.createDirectory(atPath: appPath, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(atPath: updatesPath, withIntermediateDirectories: true)
+    }
+
+    func getAppPath() -> String {
+        return appPath
+    }
+
+    /// Returns true if extraction or update was applied (artisan commands needed).
+    @discardableResult
+    func ensureAppExists() -> Bool {
+        print("📦 AppUpdateManager.ensureAppExists() starting")
+
+        var didExtract = false
+
+        // Check if app exists in documents directory and if bundled version should be extracted
+        if !hasApp() || shouldUpdateFromBundle() {
+            copyBundledApp()
+            didExtract = true
+        }
+
+        if didExtract {
+            clearCompiledCaches()
+        }
+
+        // DEBUG is the native:run payload. Always extract it (shouldUpdateFromBundle)
+        // and do not apply a leftover pending OTA on top — otherwise developers
+        // never see the PHP they just shipped. Versioned builds still apply pending.
+        if isDebugBundle() {
+            print("🚧 DEBUG bundle: skipping pending OTA apply so local changes show")
+        } else if applyPendingUpdates() {
+            clearCompiledCaches()
+            didExtract = true
+        }
+
+        appReady = true
+        print("✅ App is ready (didExtract=\(didExtract))")
+        return didExtract
+    }
+
+    private func hasApp() -> Bool {
+        // Use installed.version as the readiness marker: it is written only AFTER a
+        // fully successful extraction. A partial/interrupted extraction may have
+        // written .env (and some vendor files) but not all of them, so keying off
+        // .env would treat a broken half-install as complete and crash on a missing
+        // require. The marker is only present when extraction finished cleanly.
+        let marker = appPath + "/installed.version"
+
+        if FileManager.default.fileExists(atPath: marker) {
+            print("📦 An app bundle has already been extracted");
+            return true
+        }
+
+        print("📦 No app bundle extracted!");
+
+        return false
+    }
+
+    private func copyBundledApp() {
+        print("📦 Extracting bundled app to documents directory...")
+
+        guard let bundleZipPath = Bundle.main.path(forResource: "app", ofType: "zip") else {
+            print("❌ No bundled app.zip found")
+            return
+        }
+
+        do {
+            // Remove existing app if any
+            if FileManager.default.fileExists(atPath: appPath) {
+                try FileManager.default.removeItem(atPath: appPath)
+            }
+
+            // Extract ZIP to app directory
+            let sourceURL = URL(fileURLWithPath: bundleZipPath)
+            let destinationURL = URL(fileURLWithPath: appPath)
+
+            // Create the app directory if it doesn't exist
+            try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+
+            try extractZipParallel(from: sourceURL, to: destinationURL)
+            print("✅ Bundled app extracted successfully")
+
+            // Create installed.version file after successful extraction
+            createInstalledVersionFile()
+
+            // Run migrations and clear caches for newly extracted app
+            runMigrationsAndClearCaches()
+        } catch {
+            print("❌ Failed to extract bundled app: \(error)")
+
+            // Never leave a half-extracted bundle behind. Without this, a partial app
+            // (e.g. .env present but vendor files missing) survives on disk and the next
+            // launch treats it as installed, crashing forever on a missing require.
+            // Removing it forces a clean re-extraction on the next launch (self-healing).
+            try? FileManager.default.removeItem(atPath: appPath)
+        }
+    }
+
+    private func extractZipParallel(from sourceURL: URL, to destinationURL: URL) throws {
+        guard let archive = Archive(url: sourceURL, accessMode: .read) else {
+            throw NSError(domain: "AppUpdateManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to open ZIP archive"])
+        }
+
+        // Phase 1: Read all entries from ZIP sequentially (ZIP format requires this)
+        // but buffer file data in memory
+        var directoryPaths: [URL] = []
+        var fileDataMap: [(path: URL, data: Data)] = []
+
+        for entry in archive {
+            // ZIPFoundation 0.9.19's `entry.path` decodes as CP437 unless the EFS bit
+            // is set on the entry — and macOS `zip` often omits that flag even for
+            // UTF-8 names, producing mojibake (⚡️ → ΓÜí∩╕Å). Force UTF-8 decode via
+            // path(using:); fall back to `entry.path` only if the bytes aren't valid
+            // UTF-8 (which shouldn't happen for archives we build).
+            let utf8Path = entry.path(using: .utf8)
+            let rawPath = utf8Path.isEmpty ? entry.path : utf8Path
+
+            // Retained but inert: appendingPathComponent() re-decomposes the
+            // component, so the name still lands on disk as NFD. Lookups match
+            // anyway — the filesystem compares normalisation-insensitively.
+            let normalizedPath = (rawPath as NSString).precomposedStringWithCanonicalMapping
+            let destinationPath = destinationURL.appendingPathComponent(normalizedPath)
+
+            switch entry.type {
+            case .directory:
+                directoryPaths.append(destinationPath)
+            case .file:
+                // Pre-allocate buffer with expected size (64KB default or actual size if known)
+                let expectedSize = Int(entry.uncompressedSize)
+                var fileData = Data(capacity: max(expectedSize, 65536))
+                _ = try archive.extract(entry, bufferSize: 65536) { data in
+                    fileData.append(data)
+                }
+                fileDataMap.append((path: destinationPath, data: fileData))
+            case .symlink:
+                // Handle symlinks if needed
+                break
+            }
+        }
+
+        // Phase 2: Create all directories (sequential, fast). Include every file's
+        // parent directory up front so the concurrent writers in Phase 3 never race
+        // to create the same intermediate directories. Concurrent
+        // createDirectory(withIntermediateDirectories:) on overlapping paths is a
+        // TOCTOU race on APFS that can spuriously fail and abort the whole extraction,
+        // leaving a partial app on disk.
+        var directoriesToCreate = Set<String>()
+        for dirPath in directoryPaths {
+            directoriesToCreate.insert(dirPath.path)
+        }
+        for (path, _) in fileDataMap {
+            directoriesToCreate.insert(path.deletingLastPathComponent().path)
+        }
+        for dir in directoriesToCreate {
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        }
+
+        // Phase 3: Write all files in parallel (the slow part). All parent directories
+        // already exist, so each writer only touches its own leaf file, with no shared
+        // mutable filesystem state.
+        let queue = DispatchQueue(label: "zip.write", attributes: .concurrent)
+        let group = DispatchGroup()
+        let errorLock = NSLock()
+        var writeError: Error?
+
+        for (path, data) in fileDataMap {
+            group.enter()
+            queue.async {
+                defer { group.leave() }
+
+                do {
+                    try data.write(to: path, options: .atomic)
+                } catch {
+                    errorLock.lock()
+                    if writeError == nil {
+                        writeError = error
+                    }
+                    errorLock.unlock()
+                }
+            }
+        }
+
+        group.wait()
+
+        if let error = writeError {
+            throw error
+        }
+
+        // Phase 4: Verify every expected file actually landed on disk. Guards against
+        // silent truncation or a jetsam-killed writer so that a missing file aborts
+        // extraction (and triggers cleanup + retry) instead of being mistaken for a
+        // complete install.
+        for (path, _) in fileDataMap {
+            if !FileManager.default.fileExists(atPath: path.path) {
+                throw NSError(
+                    domain: "AppUpdateManager",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Extraction incomplete: missing \(path.lastPathComponent)"]
+                )
+            }
+        }
+    }
+
+    func installUpdate(from zipPath: String) -> Bool {
+        print("📦 Installing app update from: \(zipPath)")
+
+        let extractPath = updatesPath + "/extracted_" + UUID().uuidString
+        let envStashPath = updatesPath + "/.env.stash"
+        let currentEnvPath = appPath + "/.env"
+
+        do {
+            // Stash the running .env so device-local values survive the payload replace.
+            // Restore it verbatim over the extracted .env; no key merge. Skip if none.
+            let hadEnv = FileManager.default.fileExists(atPath: currentEnvPath)
+            if hadEnv {
+                if FileManager.default.fileExists(atPath: envStashPath) {
+                    try FileManager.default.removeItem(atPath: envStashPath)
+                }
+                try FileManager.default.copyItem(atPath: currentEnvPath, toPath: envStashPath)
+                print("📦 Stashed existing .env before pending update")
+            }
+
+            // Create extraction directory
+            try FileManager.default.createDirectory(atPath: extractPath, withIntermediateDirectories: true)
+
+            // Extract zip using ZIPFoundation
+            let sourceURL = URL(fileURLWithPath: zipPath)
+            let destinationURL = URL(fileURLWithPath: extractPath)
+
+            do {
+                try FileManager.default.unzipItem(at: sourceURL, to: destinationURL)
+            } catch {
+                print("❌ Failed to extract zip file: \(error)")
+                try? FileManager.default.removeItem(atPath: envStashPath)
+                return false
+            }
+
+            // Verify extracted app has required structure
+            guard isValidApp(at: extractPath) else {
+                print("❌ Invalid app structure in zip")
+                try? FileManager.default.removeItem(atPath: extractPath)
+                try? FileManager.default.removeItem(atPath: envStashPath)
+                return false
+            }
+
+            // Backup current app
+            let backupPath = updatesPath + "/backup_" + String(Int(Date().timeIntervalSince1970))
+            try FileManager.default.moveItem(atPath: appPath, toPath: backupPath)
+
+            // Carry the shell's identity across: which shell this is does not
+            // change because a payload arrived. Rewriting it from the payload's
+            // .env recorded the release's own version instead — "OTAb0" — so
+            // the next boot compared that against the baked bundle, saw a
+            // difference, and re-extracted the bundle over the update.
+            let installedVersion = try? String(
+                contentsOfFile: backupPath + "/installed.version", encoding: .utf8
+            )
+
+            // Move new app into place
+            try FileManager.default.moveItem(atPath: extractPath, toPath: appPath)
+
+            // Restore the stashed .env over whatever the zip extracted: the
+            // environment belongs to the installed app, not to the payload.
+            if hadEnv, FileManager.default.fileExists(atPath: envStashPath) {
+                let newEnvPath = appPath + "/.env"
+                if FileManager.default.fileExists(atPath: newEnvPath) {
+                    try FileManager.default.removeItem(atPath: newEnvPath)
+                }
+                try FileManager.default.copyItem(atPath: envStashPath, toPath: newEnvPath)
+                try? FileManager.default.removeItem(atPath: envStashPath)
+                print("📦 Restored stashed .env over extracted payload")
+            }
+
+            restoreShellVersion()
+            mergePendingManifest()
+
+            if let installedVersion, !installedVersion.isEmpty {
+                try? installedVersion.write(
+                    toFile: appPath + "/installed.version", atomically: true, encoding: .utf8
+                )
+                print("📝 Kept shell identity across update: \(installedVersion.trimmingCharacters(in: .whitespacesAndNewlines))")
+            } else {
+                createInstalledVersionFile()
+            }
+
+            // The release this payload carries, so the client can report it
+            // without unpacking anything.
+            if let manifest = try? Data(contentsOf: URL(fileURLWithPath: appPath + "/ota.json")),
+               let json = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any],
+               let release = json["release_uuid"] as? String {
+                try? release.write(toFile: appPath + "/.ota_release", atomically: true, encoding: .utf8)
+                print("📌 Applied OTA release \(release)")
+            }
+
+            // Run migrations and clear caches for updated app
+            runMigrationsAndClearCaches()
+
+            // Cleanup
+            try? FileManager.default.removeItem(atPath: extractPath)
+            try? FileManager.default.removeItem(atPath: zipPath)
+            try? FileManager.default.removeItem(atPath: envStashPath)
+
+            // Keep only the latest backup
+            cleanupOldBackups()
+
+            print("✅ App update installed successfully")
+            return true
+
+        } catch {
+            print("❌ Failed to install update: \(error)")
+
+            // Cleanup on failure
+            try? FileManager.default.removeItem(atPath: extractPath)
+            try? FileManager.default.removeItem(atPath: envStashPath)
+            return false
+        }
+    }
+
+    /// Compiled Blade views and the bootstrap cache live in Application
+    /// Support, which deliberately survives the app directory being replaced —
+    /// that is where the database lives. But they describe the code that was
+    /// there before, so after any extraction they are stale: a template the
+    /// update changed keeps rendering from the old compiled copy.
+    ///
+    /// Cleared here rather than through `artisan view:clear`, because
+    /// extraction happens before the PHP runtime exists.
+    /// A payload ships the whole Laravel .env, and it deliberately carries no
+    /// app version: which shell this is belongs to the shell. The values are
+    /// written back from bundle_meta so the running app reports the version it
+    /// was installed as, and so the identity check keeps matching.
+    ///
+    /// Dotenv is immutable — the first definition of a key wins — so existing
+    /// lines are removed rather than appended after.
+    ///
+    /// When the metadata cannot be read, nothing is written: the app then has
+    /// no version, which reads as DEBUG and re-extracts the bundle every
+    /// launch. A slow boot beats running a payload we cannot identify.
+    private func restoreShellVersion() {
+        guard let meta = bundleMetadata() else {
+            print("⚠️ No bundle metadata — leaving the payload without a version")
+            return
+        }
+
+        let envPath = appPath + "/.env"
+
+        guard var env = try? String(contentsOfFile: envPath, encoding: .utf8) else {
+            print("⚠️ No .env in the payload to restore the version into")
+            return
+        }
+
+        let kept = env
+            .components(separatedBy: .newlines)
+            .filter {
+                !$0.hasPrefix("NATIVEPHP_APP_VERSION=")
+                    && !$0.hasPrefix("NATIVEPHP_APP_VERSION_CODE=")
+                    && !$0.hasPrefix("NATIVEPHP_OTA_SHELL_BUILT_AT=")
+                    && !$0.hasPrefix("NATIVEPHP_OTA_SHELL_COMMIT=")
+            }
+            .joined(separator: "\n")
+
+        env = kept.hasSuffix("\n") ? kept : kept + "\n"
+        env += "NATIVEPHP_APP_VERSION=\"\(meta.version)\"\n"
+        env += "NATIVEPHP_APP_VERSION_CODE=\(meta.versionCode)\n"
+
+        // The shell's own baseline travels with it, not with the payload: a
+        // lane must not offer an app a release older than the code it shipped
+        // with.
+        if let json = bundleMetaJson() {
+            if let builtAt = json["shell_built_at"] as? String, !builtAt.isEmpty {
+                env += "NATIVEPHP_OTA_SHELL_BUILT_AT=\"\(builtAt)\"\n"
+            }
+            if let commit = json["shell_commit"] as? String, !commit.isEmpty {
+                env += "NATIVEPHP_OTA_SHELL_COMMIT=\"\(commit)\"\n"
+            }
+        }
+
+        do {
+            try env.write(toFile: envPath, atomically: true, encoding: .utf8)
+            print("📝 Restored shell version \(meta.version)b\(meta.versionCode) into the payload's .env")
+        } catch {
+            print("❌ Could not restore the shell version: \(error)")
+        }
+    }
+
+    /// What the server said about the release, written beside the download by
+    /// the OTA client and moved in here so the installed payload carries the
+    /// checksum and publish time alongside what the build already described.
+    private func mergePendingManifest() {
+        let pendingManifest = updatesPath + "/pending.json"
+
+        guard let data = FileManager.default.contents(atPath: pendingManifest),
+              let server = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+
+        let manifestPath = appPath + "/ota.json"
+        var merged: [String: Any] = [:]
+
+        if let existing = FileManager.default.contents(atPath: manifestPath),
+           let built = try? JSONSerialization.jsonObject(with: existing) as? [String: Any] {
+            merged = built
+        }
+
+        for (key, value) in server where key != "download_url" {
+            merged[key] = value
+        }
+
+        if let out = try? JSONSerialization.data(withJSONObject: merged, options: [.prettyPrinted, .sortedKeys]) {
+            try? out.write(to: URL(fileURLWithPath: manifestPath))
+            print("📌 Recorded release \(merged["release_uuid"] as? String ?? "?") from the server's answer")
+        }
+
+        try? FileManager.default.removeItem(atPath: pendingManifest)
+    }
+
+    private func clearCompiledCaches() {
+        let appSupport = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+
+        guard let appSupport else { return }
+
+        let caches = [
+            appSupport.appendingPathComponent("storage/framework/views"),
+            appSupport.appendingPathComponent("storage/framework/cache/data"),
+        ]
+
+        for cache in caches {
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: cache, includingPropertiesForKeys: nil
+            ) else { continue }
+
+            for entry in entries {
+                try? FileManager.default.removeItem(at: entry)
+            }
+        }
+
+        // The app's own bootstrap cache ships inside the payload, so it goes
+        // with the directory — but a config cache left behind would pin the
+        // previous release's environment.
+        let bootstrapCache = URL(fileURLWithPath: appPath).appendingPathComponent("bootstrap/cache")
+        if let entries = try? FileManager.default.contentsOfDirectory(at: bootstrapCache, includingPropertiesForKeys: nil) {
+            for entry in entries where entry.lastPathComponent.hasSuffix(".php") {
+                try? FileManager.default.removeItem(at: entry)
+            }
+        }
+
+        print("🧹 Cleared compiled caches after extraction")
+    }
+
+    private func isValidApp(at path: String) -> Bool {
+        let envFile = path + "/.env"
+        let vendorDir = path + "/vendor"
+        // The package was renamed from mobile-lite to mobile, and this kept
+        // the old path — so every payload failed validation and was deleted,
+        // and an OTA could never apply. A bundle built before the rename is
+        // still a valid app, so both names are accepted.
+        let bootstraps = [
+            path + "/vendor/nativephp/mobile/bootstrap/ios/native.php",
+            path + "/vendor/nativephp/mobile-lite/bootstrap/ios/native.php",
+        ]
+
+        return FileManager.default.fileExists(atPath: envFile) &&
+               FileManager.default.fileExists(atPath: vendorDir) &&
+               bootstraps.contains(where: { FileManager.default.fileExists(atPath: $0) })
+    }
+
+    @discardableResult
+    private func applyPendingUpdates() -> Bool {
+        // One queued payload, at one known name. Scanning for any zip would
+        // let a leftover download — fetched for a shell that has since been
+        // replaced — install itself over the app.
+        let pendingPath = updatesPath + "/pending.zip"
+
+        guard FileManager.default.fileExists(atPath: pendingPath) else {
+            return false
+        }
+
+        return installUpdate(from: pendingPath)
+    }
+
+    private func cleanupOldBackups() {
+        let updateFiles = (try? FileManager.default.contentsOfDirectory(atPath: updatesPath)) ?? []
+        let backupDirs = updateFiles.filter { $0.hasPrefix("backup_") }
+
+        // Keep only the most recent backup
+        if backupDirs.count > 1 {
+            let sortedBackups = backupDirs.sorted().dropLast()
+            for backup in sortedBackups {
+                try? FileManager.default.removeItem(atPath: updatesPath + "/" + backup)
+            }
+        }
+    }
+
+    /// Returns just the version name (e.g. "1.0.0"). Used for OTA URLs / display.
+    /// For the staleness comparison against the bundle, use `getInstalledVersionId()`.
+    func getAppVersion() -> String? {
+        if !FileManager.default.fileExists(atPath: appPath) {
+            print("❌ App directory doesn't exist - assuming DEBUG")
+            return "DEBUG"
+        }
+
+        let envFile = appPath + "/.env"
+        if FileManager.default.fileExists(atPath: envFile) {
+            if let version = getVersionFromEnvFile(envFile) {
+                print("🔢 Got current version from .env: \(version)")
+                return version
+            }
+        }
+
+        print("❌ .env file not found or no version - assume DEBUG")
+        return "DEBUG"
+    }
+
+    /// Returns the composite "version+build" identity for the installed app
+    /// (e.g. "1.0.0b42", or "DEBUG"). Falls back to building it from the
+    /// extracted .env if installed.version is missing.
+    private func getInstalledVersionId() -> String? {
+        if let id = getInstalledVersion() {
+            return id
+        }
+        return getInstalledVersionIdFromEnv()
+    }
+
+    private func getInstalledVersionIdFromEnv() -> String? {
+        let envFile = appPath + "/.env"
+        guard FileManager.default.fileExists(atPath: envFile) else {
+            return nil
+        }
+        guard let version = getVersionFromEnvFile(envFile) else {
+            return nil
+        }
+        return buildVersionId(version: version, versionCode: getVersionCodeFromEnvFile(envFile))
+    }
+
+    private func buildVersionId(version: String, versionCode: String?) -> String {
+        if version == "DEBUG" {
+            return "DEBUG"
+        }
+        return "\(version)b\(versionCode ?? "0")"
+    }
+
+    private func getVersionFromEnvFile(_ envFilePath: String) -> String? {
+        return getEnvValue(envFilePath, key: "NATIVEPHP_APP_VERSION")
+    }
+
+    private func getVersionCodeFromEnvFile(_ envFilePath: String) -> String? {
+        return getEnvValue(envFilePath, key: "NATIVEPHP_APP_VERSION_CODE")
+    }
+
+    private func getEnvValue(_ envFilePath: String, key: String) -> String? {
+        do {
+            let envContent = try String(contentsOfFile: envFilePath, encoding: .utf8)
+            return extractEnvValue(envContent, key: key)
+        } catch {
+            print("❌ Error reading .env file: \(error)")
+            return nil
+        }
+    }
+
+    private func extractEnvValue(_ envContent: String, key: String) -> String? {
+        do {
+            let pattern = "^\(NSRegularExpression.escapedPattern(for: key))=(.+)$"
+            let regex = try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+            let range = NSRange(location: 0, length: envContent.utf16.count)
+
+            if let match = regex.firstMatch(in: envContent, range: range) {
+                let valueRange = Range(match.range(at: 1), in: envContent)!
+                let value = String(envContent[valueRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            }
+        } catch {
+            print("❌ Error matching \(key) in .env: \(error)")
+        }
+        return nil
+    }
+
+    private func shouldUpdateFromBundle() -> Bool {
+        guard let bundledId = getBundledAppVersionFast() else {
+            print("⚠️ Could not read version from bundled.version file, falling back to ZIP extraction")
+            guard let bundledId = getBundledAppVersion() else {
+                print("⚠️ Could not read version from bundled app.zip")
+                return false
+            }
+            return shouldUpdateWithVersion(bundledId)
+        }
+
+        return shouldUpdateWithVersion(bundledId)
+    }
+
+    private func isDebugIdentity(_ id: String?) -> Bool {
+        guard let id else { return false }
+        return id.caseInsensitiveCompare("DEBUG") == .orderedSame
+    }
+
+    private func isDebugBundle() -> Bool {
+        if let fast = getBundledAppVersionFast(), isDebugIdentity(fast) {
+            return true
+        }
+        return isDebugIdentity(getBundledAppVersion())
+    }
+
+    /// Whether the bundled Laravel app should replace the extracted one.
+    ///
+    /// A bundle is identified by its version number and build number
+    /// (NATIVEPHP_APP_VERSION and NATIVEPHP_APP_VERSION_CODE), as "1.0.0b42",
+    /// and is only extracted when that differs from the one extracted last.
+    /// This is on purpose: two builds with the same pair count as the same
+    /// build, so a rebuild installed over the top keeps running the old code
+    /// until the build number is bumped. Android does the same.
+    private func shouldUpdateWithVersion(_ bundledId: String) -> Bool {
+        // DEBUG is what native:run ships. Always re-extract so developers see
+        // PHP changes without bumping a version (same as Android).
+        if isDebugIdentity(bundledId) {
+            print("🚧 DEBUG version detected, updating from bundle")
+            return true
+        }
+
+        let currentId = getInstalledVersionId()
+
+        // If composite identities differ, update from bundle
+        if currentId != bundledId {
+            print("📦 Bundle id (\(bundledId)) differs from current (\(currentId ?? "none")), updating from bundle")
+            return true
+        }
+
+        print("✅ App already up to date with bundle id (\(bundledId))")
+        return false
+    }
+
+    private func getBundledAppVersion() -> String? {
+        guard let bundlePath = Bundle.main.path(forResource: "app", ofType: "zip") else {
+            print("❌ No bundled app.zip found")
+            return nil
+        }
+
+        return getVersionFromZip(at: bundlePath)
+    }
+
+    private func getVersionFromZip(at zipPath: String) -> String? {
+        let sourceURL = URL(fileURLWithPath: zipPath)
+
+        // Stream-read specific entries from ZIP without extracting everything
+        guard let archive = Archive(url: sourceURL, accessMode: .read) else {
+            print("❌ Failed to open ZIP archive")
+            return nil
+        }
+
+        // Try to build composite from .env first (preferred - has both version + version_code)
+        if let envEntry = archive[".env"] {
+            var envContent = Data()
+            do {
+                _ = try archive.extract(envEntry) { data in
+                    envContent.append(data)
+                }
+                if let envString = String(data: envContent, encoding: .utf8) {
+                    if let version = extractEnvValue(envString, key: "NATIVEPHP_APP_VERSION") {
+                        let versionCode = extractEnvValue(envString, key: "NATIVEPHP_APP_VERSION_CODE")
+                        print("✅ Read version id from .env without full extraction")
+                        return buildVersionId(version: version, versionCode: versionCode)
+                    }
+                }
+            } catch {
+                print("⚠️ Failed to read .env from ZIP: \(error)")
+            }
+        }
+
+        // Fallback: try .version file (already a composite when written by PreparesBuild)
+        if let versionEntry = archive[".version"] {
+            var versionContent = Data()
+            do {
+                _ = try archive.extract(versionEntry) { data in
+                    versionContent.append(data)
+                }
+                if let versionString = String(data: versionContent, encoding: .utf8) {
+                    print("✅ Read version id from .version without full extraction")
+                    return versionString.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            } catch {
+                print("⚠️ Failed to read .version from ZIP: \(error)")
+            }
+        }
+
+        print("❌ No .env or .version found in ZIP")
+        return nil
+    }
+
+    func receiveUpdate(data: Data, filename: String) -> Bool {
+        let updatePath = updatesPath + "/" + filename
+
+        do {
+            try data.write(to: URL(fileURLWithPath: updatePath))
+            print("📥 Update received: \(filename)")
+            return true
+        } catch {
+            print("❌ Failed to save update: \(error)")
+            return false
+        }
+    }
+
+    // MARK: - Fast Version Checking
+    //
+    // OTA check/download lives in the mobile-ota plugin. Core only applies
+    // pending zips from Documents/updates on boot via applyPendingUpdates().
+
+    /// version + version_code out of bundle_meta.json — the one identity file
+    /// both platforms write and read. Android has only ever had this; iOS also
+    /// wrote bundled.version, so that stays as a fallback until every shell in
+    /// the field carries the metadata.
+    private func bundleMetadata() -> (version: String, versionCode: Int)? {
+        guard let json = bundleMetaJson(), let version = json["version"] as? String else { return nil }
+
+        // version_code comes from .env, so the build has written it as a JSON
+        // string ("1"). Reading only a number turned that into 0, the bundle
+        // id never matched installed.version ("…b1"), and every launch
+        // re-extracted the whole bundle.
+        let code: Int
+        if let number = json["version_code"] as? NSNumber {
+            code = number.intValue
+        } else if let string = json["version_code"] as? String,
+                  let parsed = Int(string.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            code = parsed
+        } else {
+            code = 0
+        }
+
+        return (version, code)
+    }
+
+    private func bundleMetaJson() -> [String: Any]? {
+        guard let path = Bundle.main.path(forResource: "bundle_meta", ofType: "json"),
+              let data = FileManager.default.contents(atPath: path)
+        else { return nil }
+
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private func getBundledAppVersionFast() -> String? {
+        if let meta = bundleMetadata() {
+            let id = meta.version.uppercased() == "DEBUG" ? "DEBUG" : "\(meta.version)b\(meta.versionCode)"
+            print("🔢 Got bundled version from bundle_meta.json: \(id)")
+
+            return id
+        }
+
+        guard let bundlePath = Bundle.main.path(forResource: "bundled", ofType: "version") else {
+            print("❌ No bundle_meta.json or bundled.version file found")
+            return nil
+        }
+
+        do {
+            let version = try String(contentsOfFile: bundlePath, encoding: .utf8)
+            let trimmedVersion = version.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("🔢 Got bundled version from bundled.version: \(trimmedVersion)")
+            return trimmedVersion
+        } catch {
+            print("❌ Error reading bundled.version file: \(error)")
+            return nil
+        }
+    }
+
+    private func getInstalledVersion() -> String? {
+        let installedVersionPath = documentsPath + "/app/installed.version"
+
+        guard FileManager.default.fileExists(atPath: installedVersionPath) else {
+            print("❌ No installed.version file found")
+            return nil
+        }
+
+        do {
+            let version = try String(contentsOfFile: installedVersionPath, encoding: .utf8)
+            let trimmedVersion = version.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("🔢 Got installed version from installed.version: \(trimmedVersion)")
+            return trimmedVersion
+        } catch {
+            print("❌ Error reading installed.version file: \(error)")
+            return nil
+        }
+    }
+
+    private func createInstalledVersionFile() {
+        let installedVersionPath = documentsPath + "/app/installed.version"
+
+        // Record the bundle's own identity, the same value shouldUpdateFromBundle
+        // compares against (as Android does). Rebuilding it from the extracted
+        // .env gave "…b0" whenever .env had no NATIVEPHP_APP_VERSION_CODE line,
+        // which never matched and re-extracted on every launch. The .env is
+        // only a fallback for shells without bundle metadata.
+        guard let id = getBundledAppVersionFast() ?? getInstalledVersionIdFromEnv() else {
+            print("⚠️ Could not determine app version id for installed.version file")
+            return
+        }
+
+        do {
+            try id.write(toFile: installedVersionPath, atomically: true, encoding: .utf8)
+            print("📝 Created installed.version file: \(id)")
+        } catch {
+            print("❌ Failed to create installed.version file: \(error)")
+        }
+    }
+
+    private func runMigrationsAndClearCaches() {
+        print("🔄 Running migrations and clearing caches...")
+
+        guard let app = NativePHPApp.shared else {
+            print("❌ NativePHPApp.shared not available")
+            return
+        }
+
+        // Run migrations
+        _ = app.artisan(additionalArgs: ["migrate", "--force"])
+
+        // Clear caches
+        _ = app.artisan(additionalArgs: ["view:clear"])
+
+        print("✅ Migrations and cache clearing completed")
+    }
+
+}

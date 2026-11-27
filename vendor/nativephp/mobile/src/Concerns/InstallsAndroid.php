@@ -1,0 +1,346 @@
+<?php
+
+namespace Native\Mobile\Concerns;
+
+use GuzzleHttp\Exception\TransferException;
+use Illuminate\Support\Facades\File;
+use Native\Mobile\Support\InstalledBinaries;
+use Native\Mobile\Support\PhpBinaries;
+use Native\Mobile\Support\TransferFailure;
+use ZipArchive;
+
+use function Laravel\Prompts\note;
+use function Laravel\Prompts\warning;
+
+trait InstallsAndroid
+{
+    use PlatformFileOperations;
+
+    protected ?bool $includeIcu = null;
+
+    public function promptAndroidOptions(): void
+    {
+        // Skip if --skip-php is passed
+        if ($this->option('skip-php') && ! $this->forcing) {
+            return;
+        }
+
+        $this->includeIcu = (bool) $this->option('with-icu');
+    }
+
+    public function setupAndroid(): void
+    {
+        $this->createAndroidStudioProject();
+        $this->writeAndroidTheme();
+
+        // Skip PHP installation if --skip-php is passed, unless --force/--fresh is also passed
+        $shouldSkipPhp = $this->option('skip-php') && ! $this->forcing;
+
+        if ($shouldSkipPhp) {
+            $this->components->warn('Skipping PHP binary installation (--skip-php)');
+        } else {
+            $this->installPHPAndroid();
+        }
+    }
+
+    private function createAndroidStudioProject(): void
+    {
+        $androidPath = base_path('nativephp/android');
+
+        if ($this->forcing && File::exists($androidPath)) {
+            $this->removeDirectory($androidPath);
+        }
+
+        File::ensureDirectoryExists($androidPath);
+
+        $source = base_path('vendor/nativephp/mobile/resources/androidstudio');
+
+        $this->components->task('Creating Android project', fn () => $this->platformOptimizedCopy($source, $androidPath));
+    }
+
+    private function writeAndroidTheme(): void
+    {
+        $androidRoot = base_path('nativephp/android');
+        $valuesPath = "{$androidRoot}/app/src/main/res/values/themes.xml";
+        $valuesNightPath = "{$androidRoot}/app/src/main/res/values-night/themes.xml";
+
+        $primary = $this->normalizeThemeColor(config('nativephp.android.theme.color_primary') ?: '#000000');
+        $primaryNight = $this->normalizeThemeColor(config('nativephp.android.theme.color_primary_night') ?: '#FFFFFF');
+        $onPrimary = $this->normalizeThemeColor(config('nativephp.android.theme.color_on_primary') ?: '#FFFFFF');
+
+        File::ensureDirectoryExists(dirname($valuesNightPath));
+
+        $this->components->task('Applying Android theme', function () use ($valuesPath, $valuesNightPath, $primary, $primaryNight, $onPrimary) {
+            File::put($valuesPath, $this->renderThemeXml($primary, $onPrimary));
+            File::put($valuesNightPath, $this->renderThemeXml($primaryNight, $onPrimary));
+
+            return true;
+        });
+    }
+
+    private function normalizeThemeColor(string $value): string
+    {
+        if (! preg_match('/^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/', $value)) {
+            warning("Invalid hex color '{$value}' in nativephp.android.theme — falling back to #000000.");
+            $value = '#000000';
+        }
+
+        $hex = strtoupper(ltrim($value, '#'));
+
+        return '#'.(strlen($hex) === 6 ? 'FF'.$hex : $hex);
+    }
+
+    private function renderThemeXml(string $primary, string $onPrimary): string
+    {
+        return <<<XML
+            <?xml version="1.0" encoding="utf-8"?>
+            <resources>
+                <style name="Theme.AndroidPHP" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+                    <item name="colorPrimary">{$primary}</item>
+                    <item name="colorPrimaryVariant">{$primary}</item>
+                    <item name="colorOnPrimary">{$onPrimary}</item>
+                    <item name="colorAccent">{$primary}</item>
+                    <item name="android:colorAccent">{$primary}</item>
+                    <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+                    <item name="android:statusBarColor">@android:color/transparent</item>
+                    <item name="android:navigationBarColor">@android:color/transparent</item>
+                    <item name="android:enforceStatusBarContrast">false</item>
+                    <item name="android:enforceNavigationBarContrast">false</item>
+                </style>
+            </resources>
+
+            XML;
+    }
+
+    private function installPHPAndroid(): void
+    {
+        // See installPHPIos(): no record survives an install that stops partway.
+        InstalledBinaries::forget(base_path('nativephp/android'));
+
+        // Fail early: ZipArchive validates (and on Linux/macOS extracts) the
+        // downloaded archive, but ext-zip is not guaranteed on stock Linux or
+        // Windows PHP installs — better to error now than after a multi-MB download.
+        if (! class_exists(ZipArchive::class)) {
+            $this->failInstall('The PHP zip extension (ext-zip) is required to install Android PHP binaries.');
+            note(PHP_OS_FAMILY === 'Windows'
+                ? 'Enable extension=zip in your php.ini and retry.'
+                : 'Install it (e.g. sudo apt install php'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION.'-zip) and retry.');
+
+            return;
+        }
+
+        $includeIcu = $this->includeIcu ?? false;
+        $phpVersion = $this->phpVersion;
+        $versions = $this->versionsManifest;
+
+        // No manifest at all means the fetch already failed and explained
+        // itself. Repeating "not available" here would point at the PHP
+        // version, which isn't the problem.
+        if (! $versions) {
+            return;
+        }
+
+        if (! isset($versions['versions'][$phpVersion])) {
+            $this->failInstall("PHP {$phpVersion} binaries are not part of release ".PhpBinaries::release());
+
+            return;
+        }
+
+        $androidFiles = $versions['versions'][$phpVersion]['android'] ?? [];
+
+        $url = null;
+        foreach ($androidFiles as $fileUrl) {
+            $isIcu = str_contains($fileUrl, '-icu.');
+            if ($includeIcu && $isIcu) {
+                $url = $fileUrl;
+                break;
+            } elseif (! $includeIcu && ! $isIcu) {
+                $url = $fileUrl;
+                break;
+            }
+        }
+
+        if (! $url) {
+            $variant = $includeIcu ? 'ICU' : 'non-ICU';
+            $this->failInstall("No {$variant} Android binary found for PHP {$phpVersion}");
+
+            return;
+        }
+
+        $cacheDir = PhpBinaries::cacheDirectory();
+        File::ensureDirectoryExists($cacheDir);
+
+        $zipFilename = basename(parse_url($url, PHP_URL_PATH));
+        $zipFile = $cacheDir.DIRECTORY_SEPARATOR.$zipFilename;
+        $extractPath = storage_path('android-temp');
+
+        $fullVersion = $versions['versions'][$phpVersion]['php_version'] ?? $phpVersion;
+        $this->components->twoColumnDetail('PHP version', $fullVersion);
+        $this->components->twoColumnDetail('ICU support', $includeIcu ? 'Enabled' : 'Disabled');
+
+        $expected = PhpBinaries::expectedFile($versions, $phpVersion, 'android', $url);
+
+        // A cached archive is only reused while it's still the file the
+        // manifest describes. A cut-off download or a damaged disk would
+        // otherwise be installed again on every run.
+        if (file_exists($zipFile) && $expected !== null && PhpBinaries::fileMismatch($zipFile, $expected) !== null) {
+            note("The cached {$zipFilename} doesn't match the release manifest, so it will be downloaded again.");
+            unlink($zipFile);
+        }
+
+        if (file_exists($zipFile)) {
+            $sizeMB = round(filesize($zipFile) / 1024 / 1024, 1);
+            $this->components->twoColumnDetail('Cached binary', "{$zipFilename} ({$sizeMB}MB)");
+        } else {
+            $client = $this->binariesClient();
+            $downloadFailed = null;
+
+            try {
+                $this->components->task('Downloading Android PHP binaries', function () use ($client, $url, $zipFile, &$downloadFailed) {
+                    try {
+                        $client->request('GET', $url, [
+                            'sink' => $zipFile,
+                            'connect_timeout' => 60,
+                            'timeout' => 600,
+                        ]);
+
+                        return true;
+                    } catch (TransferException $e) {
+                        // Remove any partial/error response written to disk
+                        if (file_exists($zipFile)) {
+                            unlink($zipFile);
+                        }
+                        $downloadFailed = TransferFailure::describe($e);
+
+                        // Thrown rather than `return false`: as of Laravel 13 the
+                        // Task component matches the callback's return value
+                        // against the TaskResult enum, so false matches no arm and
+                        // renders DONE. Throwing leaves $result at its Failure
+                        // default, so the task reports FAIL on every supported
+                        // Laravel version.
+                        throw $e;
+                    }
+                });
+            } catch (TransferException) {
+                // Already reported by the task line; the message is below.
+            }
+
+            if ($downloadFailed !== null) {
+                $this->failInstall("Failed to download PHP binaries from: $url"."\n".$downloadFailed);
+
+                return;
+            }
+
+            if ($expected !== null && ($mismatch = PhpBinaries::fileMismatch($zipFile, $expected)) !== null) {
+                unlink($zipFile);
+                $this->failInstall("The downloaded {$zipFilename} doesn't match the release manifest: {$mismatch}."
+                    ."\n".'Run the install again. If it keeps happening, something between here and bin.nativephp.com is changing the download.');
+
+                return;
+            }
+
+            // Verify the downloaded file is actually a ZIP
+            $zip = new ZipArchive;
+            if ($zip->open($zipFile, ZipArchive::RDONLY) !== true) {
+                $this->failInstall('Downloaded file is not a valid ZIP archive. The URL may be incorrect.');
+                unlink($zipFile);
+
+                return;
+            }
+            $zip->close();
+
+            $sizeMB = round(filesize($zipFile) / 1024 / 1024, 1);
+            $this->components->twoColumnDetail('Download size', "{$sizeMB}MB");
+        }
+
+        if ($expected !== null) {
+            $this->components->twoColumnDetail('SHA-256', 'Matches the release manifest');
+        }
+
+        File::ensureDirectoryExists($extractPath);
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $sevenZip = config('nativephp.android.7zip-location');
+
+            if (! file_exists($sevenZip)) {
+                $this->failInstall("7-Zip not found at: $sevenZip");
+                note('Install 7-Zip or set NATIVEPHP_7ZIP_LOCATION environment variable.');
+
+                return;
+            }
+
+            $extractFailed = false;
+
+            try {
+                $this->components->task('Extracting PHP binaries', function () use ($sevenZip, $zipFile, $extractPath, &$extractFailed) {
+                    $cmd = "\"$sevenZip\" x \"$zipFile\" \"-o$extractPath\" -y";
+                    exec($cmd, $output, $code);
+
+                    if ($code !== 0) {
+                        $extractFailed = true;
+
+                        // Thrown for the same reason as the download task: a
+                        // false return renders DONE on Laravel 13.
+                        throw new \RuntimeException("7-Zip exited with code {$code}.");
+                    }
+
+                    return true;
+                });
+            } catch (\RuntimeException) {
+                // Reported below.
+            }
+
+            if ($extractFailed) {
+                $this->failInstall('7-Zip extraction failed.');
+
+                return;
+            }
+        } else {
+            $zip = new ZipArchive;
+
+            if ($zip->open($zipFile) !== true) {
+                $this->failInstall('Failed to open downloaded ZIP file.');
+
+                return;
+            }
+
+            $this->components->task('Extracting PHP binaries', function () use ($zip, $extractPath) {
+                $zip->extractTo($extractPath);
+                $zip->close();
+            });
+        }
+
+        $mainDir = base_path('nativephp/android/app/src/main');
+        File::ensureDirectoryExists($mainDir);
+
+        // Static libs go to app/src/main/staticLibs/
+        $staticLibsSrc = $extractPath.DIRECTORY_SEPARATOR.'staticLibs';
+        $staticLibsDst = $mainDir.DIRECTORY_SEPARATOR.'staticLibs';
+
+        // Headers go to app/src/main/cpp/include/
+        $includeSrc = $extractPath.DIRECTORY_SEPARATOR.'include';
+        $includeDst = $mainDir.DIRECTORY_SEPARATOR.'cpp'.DIRECTORY_SEPARATOR.'include';
+
+        $this->components->task('Installing static libraries', function () use ($staticLibsSrc, $staticLibsDst) {
+            if (is_dir($staticLibsSrc)) {
+                File::ensureDirectoryExists($staticLibsDst);
+                $this->platformOptimizedCopy($staticLibsSrc, $staticLibsDst);
+            }
+        });
+
+        $this->components->task('Installing PHP headers', function () use ($includeSrc, $includeDst) {
+            if (is_dir($includeSrc)) {
+                File::ensureDirectoryExists($includeDst);
+                $this->platformOptimizedCopy($includeSrc, $includeDst);
+            }
+        });
+
+        InstalledBinaries::record(base_path('nativephp/android'));
+
+        try {
+            $this->removeDirectory($extractPath);
+        } catch (\Exception $e) {
+            warning('Could not remove temporary files: '.$e->getMessage());
+        }
+    }
+}

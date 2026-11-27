@@ -1,0 +1,144 @@
+<?php
+
+namespace App\Models;
+
+use App\Support\UserSettings;
+use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\HasApiTokens;
+
+/**
+ * @property array<string, mixed>|null $settings Opgeslagen instellingen (JSON, via de 'array'-cast).
+ * @property bool $is_admin Mag het admin-dashboard openen (niet mass-assignable).
+ * @property Carbon|null $birth_date Geboortedatum (via de 'date'-cast).
+ */
+#[Fillable(['email', 'username', 'password', 'full_name', 'birth_date'])]
+#[Hidden(['password', 'remember_token'])]
+class User extends Authenticatable
+{
+    /** @use HasFactory<UserFactory> */
+    use HasApiTokens, HasFactory, Notifiable;
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'birth_date' => 'date',
+            'xp' => 'integer',
+            'password' => 'hashed',
+            'settings' => 'array',
+            'is_admin' => 'boolean',
+        ];
+    }
+
+    /**
+     * Verwijdert het account met alle gegevens. De rijen (activiteiten, reacties, likes,
+     * voltooiingen) verdwijnen via cascade; de afbeeldingen ruimen we hier zelf op.
+     */
+    public function deleteAccount(): void
+    {
+        // API-tokens hebben geen foreign key (polymorf), dus die ruimen we zelf op.
+        $this->tokens()->delete();
+        $this->delete();
+
+        Storage::disk(Activity::IMAGE_DISK)->deleteDirectory("activities/{$this->id}");
+    }
+
+    /**
+     * Instellingen van deze gebruiker, aangevuld met de standaardwaarden.
+     *
+     * @return array{frequency: int, dailyGoal: int, darkMode: bool, workOnly: bool, workStart: string, workEnd: string, workDays: list<int>, workSchedule: list<array{start: string, end: string}>}
+     */
+    public function preferences(): array
+    {
+        return UserSettings::normalize($this->settings);
+    }
+
+    /**
+     * @return HasMany<Activity, $this>
+     */
+    public function activities(): HasMany
+    {
+        return $this->hasMany(Activity::class);
+    }
+
+    /**
+     * @return HasMany<ChallengeCompletion, $this>
+     */
+    public function challengeCompletions(): HasMany
+    {
+        return $this->hasMany(ChallengeCompletion::class);
+    }
+
+    /**
+     * Ranglijstvolgorde: meeste XP eerst; bij gelijke XP op gebruikersnaam en daarna ID.
+     *
+     * LOWER(): hoofdletters tellen niet mee, ongeacht de collatie van de database
+     * (MySQL met utf8mb4_unicode_ci doet dat al; zo blijft het ook elders gelijk).
+     * Gebruikersnamen zijn ASCII.
+     *
+     * @param  Builder<User>  $query
+     */
+    #[Scope]
+    protected function leaderboard(Builder $query): void
+    {
+        $query->orderByDesc('xp')
+            ->orderByRaw('LOWER(username) ASC')
+            ->orderBy('id');
+    }
+
+    /**
+     * Positie op de ranglijst (1 = meeste XP), met dezelfde volgorde als leaderboard().
+     */
+    public function leaderboardRank(): int
+    {
+        $username = mb_strtolower($this->username);
+
+        return static::query()
+            ->where(function (Builder $query) use ($username): void {
+                $query->where('xp', '>', $this->xp)
+                    ->orWhere(function (Builder $query) use ($username): void {
+                        $query->where('xp', $this->xp)
+                            ->where(function (Builder $query) use ($username): void {
+                                $query->whereRaw('LOWER(username) < ?', [$username])
+                                    ->orWhere(function (Builder $query) use ($username): void {
+                                        $query->whereRaw('LOWER(username) = ?', [$username])
+                                            ->where('id', '<', $this->id);
+                                    });
+                            });
+                    });
+            })
+            ->count() + 1;
+    }
+
+    /**
+     * Maximaal twee initialen voor de avatar (er is geen profielfoto).
+     */
+    public function initials(): string
+    {
+        $initials = '';
+
+        foreach (preg_split('/\s+/', trim($this->full_name)) as $part) {
+            if ($part !== '') {
+                $initials .= mb_substr($part, 0, 1);
+            }
+
+            if (mb_strlen($initials) >= 2) {
+                break;
+            }
+        }
+
+        return $initials !== '' ? mb_strtoupper($initials) : '?';
+    }
+}
